@@ -2,12 +2,13 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
-root = Path(SPECPATH).parent.parent
-hiddenimports = collect_submodules("webview")
+# SPECPATH is the directory containing this spec file (windows/).
+root = Path(SPECPATH).resolve().parent.parent
+hiddenimports = [m for m in collect_submodules("webview") if ".platforms.android" not in m]
 
 a = Analysis(
     [str(root / "windows" / "launcher.py")],
-    pathex=[str(root)],
+    pathex=[str(root), str(root / "windows")],
     binaries=[],
     datas=[
         (str(root / "app.py"), "."),
