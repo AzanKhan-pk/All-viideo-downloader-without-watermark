@@ -1,9 +1,9 @@
 name: Build Android and Windows releases
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -49,6 +49,12 @@ jobs:
       - name: Generate ICO from project SVG
         shell: pwsh
         run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
+      - name: Verify Windows sources
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'windows/launcher.py')) { throw 'windows/launcher.py is missing from the checkout.' }
+          if (-not (Test-Path 'windows/app.spec')) { throw 'windows/app.spec is missing from the checkout.' }
+          if (-not (Test-Path 'windows/setup.iss')) { throw 'windows/setup.iss is missing from the checkout.' }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
@@ -63,17 +69,17 @@ jobs:
         with:
           path: windows/setup.iss
           options: /O+
-      - name: Rename installer
+      - name: Locate installer
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
-          $setup = Get-ChildItem release -Filter 'All-Video-Downloader-Setup.exe' | Select-Object -First 1
+          $setup = Get-ChildItem -Path . -Filter 'All-Video-Downloader-Setup.exe' -Recurse | Where-Object { $_.FullName -notmatch '\\release\\' } | Select-Object -First 1
           if (-not $setup) { throw 'Installer was not produced.' }
-          Copy-Item $setup.FullName All-Video-Downloader-Setup.exe -Force
+          Copy-Item $setup.FullName release/All-Video-Downloader-Setup.exe -Force
       - uses: actions/upload-artifact@v4
         with:
           name: All-Video-Downloader-Windows
-          path: All-Video-Downloader-Setup.exe
+          path: release/All-Video-Downloader-Setup.exe
 
   publish:
     needs: [android, windows]
