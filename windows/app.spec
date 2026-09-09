@@ -2,12 +2,20 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
-# SPECPATH is the directory containing this spec file (windows/).
-root = Path(SPECPATH).resolve().parent.parent
+# Resolve the repository root from this spec file without relying on runtime paths.
+root = Path.cwd().resolve()
+if (root / "windows" / "launcher.py").exists():
+    pass
+elif (root.parent / "windows" / "launcher.py").exists():
+    root = root.parent
+else:
+    raise SystemExit(f"Repository root not found. cwd={root}")
+
+launcher = root / "windows" / "launcher.py"
 hiddenimports = [m for m in collect_submodules("webview") if ".platforms.android" not in m]
 
 a = Analysis(
-    [str(root / "windows" / "launcher.py")],
+    [str(launcher)],
     pathex=[str(root), str(root / "windows")],
     binaries=[],
     datas=[
@@ -19,7 +27,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3"],
+    excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3"],
     noarchive=False,
 )
 
