@@ -3,7 +3,6 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
 root = Path(SPECPATH).parent.parent
-
 hiddenimports = collect_submodules("webview")
 
 a = Analysis(
@@ -37,4 +36,5 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
+    icon=str(root / "windows" / "app.ico"),
 )
