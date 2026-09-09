@@ -73,11 +73,11 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force release | Out-Null
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
-          $setup = Get-ChildItem -Path . -Recurse -File -Filter 'All-Video-Downloader-Setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'Installer was not produced.' }
-          Copy-Item $setup.FullName release/All-Video-Downloader-Setup.exe -Force
+          $setup = Join-Path (Get-Location) 'release/All-Video-Downloader-Setup.exe'
+          if (-not (Test-Path $setup)) { throw "Installer was not produced at $setup" }
+          Write-Host "Installer exists: $setup"
+          Get-Item $setup | Format-List FullName,Length
       - uses: actions/upload-artifact@v4
         with:
           name: All-Video-Downloader-Windows
