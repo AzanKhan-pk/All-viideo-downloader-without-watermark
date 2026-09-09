@@ -22,6 +22,7 @@ SetupIconFile=app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Files]
+Source: "..\dist\All-Video-Downloader.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\All-Video-Downloader\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
