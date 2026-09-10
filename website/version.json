@@ -1,6 +1,6 @@
 {
-  "version": "1.0.4-site.1",
+  "version": "1.0.5-site.1",
   "name": "All Video Downloader",
-  "app_version": "1.0.4",
-  "message": "Automatic app-release links and update-aware website"
+  "app_version": "1.0.5",
+  "message": "Windows Browse location, Open folder, and Copy/Cut/Paste/Select All controls added"
 }
