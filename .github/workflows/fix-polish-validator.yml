@@ -1,36 +1,31 @@
 name: Fix polish workflow validator
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fix validator marker
+      - name: Validate required UI markers
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('.github/workflows/polish-media-downloader.yml')
-          s = p.read_text(encoding='utf-8')
-          old = "              'class=\"avd-context-menu\"',\n"
-          new = "              'avd-context-menu',\n"
-          if old in s:
-              p.write_text(s.replace(old, new, 1), encoding='utf-8')
-              print('validator fixed')
-          else:
-              print('validator already fixed')
+          h = Path('templates/index.html').read_text(encoding='utf-8')
+          required = [
+              'id="pasteUrlButton"',
+              'id="locationPanel"',
+              'function pasteUrlDirect()',
+              'data-action="showfolder"',
+              'class="avd-context-menu"',
+          ]
+          missing = [x for x in required if x not in h]
+          if missing:
+              raise SystemExit('Missing UI markers: ' + ', '.join(missing))
+          print('validator OK')
           PY
-          if git diff --quiet; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/polish-media-downloader.yml
-          git commit -m "Fix polish workflow validation"
-          git push
