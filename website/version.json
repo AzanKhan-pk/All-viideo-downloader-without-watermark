@@ -1,5 +1,6 @@
 {
-  "version": "2026.09.09.2",
+  "version": "1.0.4-site.1",
   "name": "All Video Downloader",
-  "message": "4K quality and one-click download website update"
+  "app_version": "1.0.4",
+  "message": "Automatic app-release links and update-aware website"
 }
