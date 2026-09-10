@@ -1,6 +1,6 @@
 {
-  "version": "1.0.5-site.1",
+  "version": "1.0.56-site.2",
   "name": "All Video Downloader",
-  "app_version": "1.0.5",
-  "message": "Windows Browse location, Open folder, and Copy/Cut/Paste/Select All controls added"
+  "app_version": "1.0.56",
+  "message": "Download links synced with the latest v1.0.56 Android APK and Windows installer"
 }
