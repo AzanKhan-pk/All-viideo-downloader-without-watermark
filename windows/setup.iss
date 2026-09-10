@@ -1,5 +1,5 @@
 #define MyAppName "All Video Downloader Without Watermark"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "Azan Khan"
 #define MyAppExeName "All-Video-Downloader.exe"
 
@@ -17,7 +17,6 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-Uninstallable=yes
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
