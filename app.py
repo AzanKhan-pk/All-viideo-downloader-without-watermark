@@ -9,11 +9,6 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-try:
-    from curl_cffi import requests as curl_requests
-except Exception:
-    curl_requests = None
-
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -121,42 +116,36 @@ def ffmpeg_available():
 
 
 def extractor_options():
-    options = {
+    return {
         "quiet": True,
         "no_warnings": True,
+
+        # Don't download playlists accidentally.
         "noplaylist": True,
+
         "socket_timeout": 30,
+
         "retries": 5,
-        "extractor_retries": 4,
         "fragment_retries": 5,
         "file_access_retries": 5,
+
+        # Allows interrupted downloads to continue.
         "continuedl": True,
+
         "nopart": False,
+
         "overwrites": False,
+
         "restrictfilenames": False,
         "windowsfilenames": True,
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/140.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.google.com/",
-        },
     }
-    # curl_cffi 0.15.x is used by the Windows build for stable browser
-    # impersonation. Do not force impersonation when the optional handler is
-    # unavailable; yt-dlp can then fall back to its normal request handlers.
-    if curl_requests is not None:
-        options["impersonate"] = "chrome"
-    return options
 
 
 # =========================================================
 # JOBS
-# =========================================================\n\ndef is_tiktok_url(url):\n    domain = get_domain(url)\n    return domain == "tiktok.com" or domain.endswith(".tiktok.com")\n\n\ndef _script_json(html, script_id):\n    match = re.search(\n        rf'<script[^>]+id=["\\\']{re.escape(script_id)}["\\\'][^>]*>(.*?)</script>',\n        html,\n        re.S | re.I,\n    )\n    if not match:\n        return None\n    try:\n        import html as html_module\n        raw = html_module.unescape(match.group(1).strip())\n        return __import__("json").loads(raw)\n    except Exception:\n        return None\n\n\ndef tiktok_web_fallback(url):\n    """Extract public TikTok page data when the normal yt-dlp webpage parser fails."""\n    if not is_tiktok_url(url) or curl_requests is None:\n        return None\n\n    headers = {\n        "User-Agent": (\n            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "\n            "AppleWebKit/537.36 (KHTML, like Gecko) "\n            "Chrome/140.0.0.0 Safari/537.36"\n        ),\n        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",\n        "Accept-Language": "en-US,en;q=0.9",\n        "Referer": "https://www.tiktok.com/",\n    }\n\n    session = curl_requests.Session(impersonate="chrome")\n    response = session.get(url, headers=headers, timeout=30, allow_redirects=True)\n    response.raise_for_status()\n    html = response.text\n\n    item = None\n    sigi = _script_json(html, "SIGI_STATE")\n    if isinstance(sigi, dict):\n        item_module = sigi.get("ItemModule") or {}\n        for value in item_module.values():\n            if isinstance(value, dict) and isinstance(value.get("video"), dict):\n                item = value\n                break\n\n    if item is None:\n        universal = _script_json(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__")\n        scope = universal.get("__DEFAULT_SCOPE__", {}) if isinstance(universal, dict) else {}\n        detail = scope.get("webapp.video-detail", {}) if isinstance(scope, dict) else {}\n        item = ((detail.get("itemInfo") or {}).get("itemStruct") if isinstance(detail, dict) else None)\n\n    if not isinstance(item, dict):\n        return None\n\n    video = item.get("video") or {}\n    formats = []\n\n    bitrate_items = video.get("bitrateInfo") or []\n    for index, entry in enumerate(bitrate_items):\n        if not isinstance(entry, dict):\n            continue\n        play = entry.get("PlayAddr") or entry.get("playAddr") or {}\n        urls = play.get("UrlList") or play.get("urlList") or []\n        if not urls:\n            continue\n        direct = urls[-1]\n        height = entry.get("Height") or entry.get("height") or play.get("Height") or play.get("height") or video.get("height")\n        width = entry.get("Width") or entry.get("width") or play.get("Width") or play.get("width") or video.get("width")\n        bitrate = entry.get("Bitrate") or entry.get("bitrate") or 0\n        try:\n            height = int(height) if height else None\n        except Exception:\n            height = None\n        try:\n            width = int(width) if width else None\n        except Exception:\n            width = None\n        formats.append({\n            "format_id": f"tiktok-web-{index}",\n            "url": direct,\n            "ext": "mp4",\n            "height": height,\n            "width": width,\n            "vcodec": "h264",\n            "acodec": "aac",\n            "tbr": (float(bitrate) / 1000.0) if bitrate else None,\n            "filesize": None,\n        })\n\n    if not formats:\n        direct = video.get("downloadAddr") or video.get("download_addr") or video.get("playAddr") or video.get("play_addr")\n        if isinstance(direct, dict):\n            urls = direct.get("UrlList") or direct.get("urlList") or []\n            direct = urls[-1] if urls else None\n        if direct:\n            formats.append({\n                "format_id": "tiktok-web-direct",\n                "url": direct,\n                "ext": "mp4",\n                "height": video.get("height"),\n                "width": video.get("width"),\n                "vcodec": "h264",\n                "acodec": "aac",\n                "filesize": None,\n            })\n\n    if not formats:\n        return None\n\n    formats.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0), reverse=True)\n    video_id = str(item.get("id") or "tiktok")\n    title = item.get("desc") or item.get("description") or f"TikTok video {video_id}"\n    author = item.get("author") or {}\n    thumbnail = video.get("cover") or video.get("originCover") or video.get("dynamicCover")\n    return {\n        "id": video_id,\n        "title": title,\n        "thumbnail": thumbnail,\n        "duration": item.get("video", {}).get("duration"),\n        "uploader": author.get("uniqueId") if isinstance(author, dict) else author,\n        "extractor": "TikTok",\n        "extractor_key": "TikTok",\n        "domain": "tiktok.com",\n        "webpage_url": response.url,\n        "formats": formats,\n        "_avd_tiktok_fallback": True,\n    }\n\n\ndef extract_media_info(url):\n    try:\n        with yt_dlp.YoutubeDL(extractor_options()) as ydl:\n            return ydl.extract_info(url, download=False)\n    except Exception:\n        fallback = tiktok_web_fallback(url)\n        if fallback:\n            return fallback\n        raise\n\n\ndef has_audio_stream(path):\n    if not ffmpeg_available():\n        return True\n    ffprobe = shutil.which("ffprobe")\n    if not ffprobe:\n        return True\n    try:\n        result = subprocess.run(\n            [ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],\n            capture_output=True, text=True, timeout=20, encoding="utf-8", errors="replace",\n        )\n        return bool(result.stdout.strip())\n    except Exception:\n        return True\n\n\ndef create_job(url, mode, quality):
+# =========================================================
+
+def create_job(url, mode, quality):
 
     job_id = uuid.uuid4().hex
 
@@ -684,7 +673,10 @@ def download_worker(
             extractor_options()
         ) as ydl:
 
-            info = extract_media_info(url)
+            info = ydl.extract_info(
+                url,
+                download=False
+            )
 
         title = info.get(
             "title",
@@ -905,54 +897,16 @@ def download_worker(
             status="downloading"
         )
 
-        if info.get("_avd_tiktok_fallback"):
-            direct_formats = [f for f in info.get("formats", []) if f.get("url")]
-            if not direct_formats:
-                raise RuntimeError("TikTok returned no public video stream.")
-            if mode == "video":
-                target_candidates = [f for f in direct_formats if (f.get("height") or 0) >= quality]
-                selected_direct = min(target_candidates, key=lambda f: f.get("height") or 10**9) if target_candidates else max(direct_formats, key=lambda f: f.get("height") or 0)
-            else:
-                selected_direct = direct_formats[0]
-            direct_url = selected_direct["url"]
-            direct_output = job_dir / "tiktok-direct.mp4"
-            with curl_requests.get(
-                direct_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36",
-                    "Referer": "https://www.tiktok.com/",
-                },
-                impersonate="chrome",
-                timeout=60,
-                stream=True,
-            ) as direct_response:
-                direct_response.raise_for_status()
-                total = int(direct_response.headers.get("content-length") or 0)
-                downloaded = 0
-                with direct_output.open("wb") as handle:
-                    for chunk in direct_response.iter_content(chunk_size=1024 * 256):
-                        if not chunk:
-                            continue
-                        handle.write(chunk)
-                        downloaded += len(chunk)
-                        update_job(
-                            job_id,
-                            status="downloading",
-                            downloaded_bytes=downloaded,
-                            total_bytes=total,
-                            percentage=(downloaded / total * 100) if total else 0,
-                            speed=0,
-                        )
-            output_file = direct_output
-        else:
-            with yt_dlp.YoutubeDL(
-                options
-            ) as ydl:
-                downloaded_info = ydl.extract_info(
+        with yt_dlp.YoutubeDL(
+            options
+        ) as ydl:
+
+            downloaded_info = (
+                ydl.extract_info(
                     url,
                     download=True
                 )
-
+            )
 
         # =================================================
         # FIND DOWNLOADED FILE
@@ -986,34 +940,6 @@ def download_worker(
                 f.stat().st_size
 
         )
-
-        # =================================================
-        # AUDIO SAFETY CHECK
-        # =================================================
-
-        if mode == "video" and not has_audio_stream(output_file):
-            update_job(job_id, status="processing", conversion=True)
-            audio_template = str(job_dir / "fallback-audio.%(ext)s")
-            audio_options = extractor_options()
-            audio_options.update({
-                "format": "bestaudio/best",
-                "outtmpl": audio_template,
-                "noplaylist": True,
-            })
-            with yt_dlp.YoutubeDL(audio_options) as audio_ydl:
-                audio_ydl.extract_info(url, download=True)
-            audio_files = [f for f in job_dir.iterdir() if f.is_file() and f.name.startswith("fallback-audio") and not f.name.endswith(".part")]
-            if audio_files and ffmpeg_available():
-                audio_file = max(audio_files, key=lambda f: f.stat().st_size)
-                muxed = job_dir / "muxed-with-audio.mp4"
-                mux_command = [
-                    "ffmpeg", "-y", "-i", str(output_file), "-i", str(audio_file),
-                    "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-                    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(muxed),
-                ]
-                mux = subprocess.run(mux_command, capture_output=True, text=True, encoding="utf-8", errors="replace")
-                if mux.returncode == 0 and muxed.exists() and has_audio_stream(muxed):
-                    output_file = muxed
 
         # =================================================
         # REAL LOWER-QUALITY CONVERSION
@@ -1361,7 +1287,10 @@ def get_info():
             extractor_options()
         ) as ydl:
 
-            info = extract_media_info(url)
+            info = ydl.extract_info(
+                url,
+                download=False
+            )
 
         formats = []
 
