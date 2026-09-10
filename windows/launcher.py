@@ -14,7 +14,7 @@ from tkinter import messagebox
 import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.4"
 PORT = 5000
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
@@ -56,7 +56,7 @@ def version_tuple(value):
 def check_for_update():
     try:
         req = urllib.request.Request(RELEASE_API, headers={"User-Agent": APP_NAME})
-        with urllib.request.urlopen(req, timeout=4) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             release = json.load(response)
         latest = str(release.get("tag_name", ""))
         if version_tuple(latest) <= version_tuple(APP_VERSION):
@@ -91,7 +91,7 @@ def main():
                     break
         except Exception:
             time.sleep(0.25)
-    webview.create_window(APP_NAME, f"http://127.0.0.1:{PORT}", width=1200, height=820, min_size=(900, 650))
+    webview.create_window(APP_NAME, f"http://127.0.0.1:{PORT}", width=1200, height=820, min_size=(900, 650), text_select=True)
     webview.start()
 
 
