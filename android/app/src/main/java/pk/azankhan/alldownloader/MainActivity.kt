@@ -7,6 +7,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -26,7 +29,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private val executor = Executors.newFixedThreadPool(2)
     private val port = 5000
-    private val currentVersion = "1.0.4"
+    private val currentVersion = "1.0.6"
     private val releaseApi = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -42,6 +45,10 @@ class MainActivity : Activity() {
     private fun configureWebView() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                enableTextSelection()
+            }
         }
         webView.webChromeClient = WebChromeClient()
         webView.settings.javaScriptEnabled = true
@@ -49,6 +56,31 @@ class MainActivity : Activity() {
         webView.settings.allowFileAccess = true
         webView.settings.allowContentAccess = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
+
+        // Keep Android WebView's native long-press selection menu enabled.
+        // This gives users the normal Select / Copy / Share / Paste actions.
+        webView.isLongClickable = true
+        webView.setHapticFeedbackEnabled(true)
+        webView.setOnLongClickListener { false }
+        webView.isFocusable = true
+        webView.isFocusableInTouchMode = true
+    }
+
+    private fun enableTextSelection() {
+        val js = """
+            (() => {
+              const style = document.createElement('style');
+              style.id = 'avd-android-selection';
+              style.textContent = `
+                html, body, body * { -webkit-user-select: text !important; user-select: text !important; }
+                button, a, input, textarea, select { -webkit-user-select: text !important; user-select: text !important; }
+              `;
+              const old = document.getElementById('avd-android-selection');
+              if (old) old.remove();
+              document.head.appendChild(style);
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
     }
 
     private fun copyAssetTree(assetPath: String, target: File) {
