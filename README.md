@@ -1,8 +1,35 @@
 # All Video Downloader Without Watermark
 
-A standalone Flask + yt-dlp public-media downloader starter.
+A standalone **Flask + yt-dlp** downloader project with Android and Windows builds, a public download website, and automatic versioned releases.
 
-## Run on Windows
+## Official download page
+
+The website always points its Android and Windows buttons to the latest GitHub release assets, so the download links do not need to be changed manually for every new release.
+
+## What is included
+
+- Windows desktop application
+- Android APK
+- Flask downloader engine
+- yt-dlp extractor architecture for broad public-media site coverage
+- FFmpeg support for media merging/conversion
+- 4K selection when the source actually provides a compatible 2160p format
+- Source-title-based filenames
+- Windows update notification
+- Android update notification
+- Automatic versioned GitHub releases from the main branch
+- GitHub Pages download website
+- Website auto-refresh/version checking
+
+## Automatic app updates
+
+Installed Windows and Android builds check the repository's latest published release when the app starts. If a newer version is available, the user is notified and can choose to update.
+
+The release workflow automatically generates a new version number for future builds. The Android version code is also increased automatically so newer APKs can be installed as updates. The Windows installer and launcher use the same generated version.
+
+The website's Android and Windows download buttons use GitHub's `releases/latest/download/...` URLs, so they automatically follow the newest published release. GitHub's release API provides the latest published release and its assets.
+
+## Run on Windows for development
 
 1. Install Python 3.11+.
 2. Install FFmpeg and make sure `ffmpeg` is in PATH (required for many video merges/audio conversions).
@@ -18,15 +45,25 @@ python app.py
 
 5. Open `http://127.0.0.1:5000`.
 
-## Important architecture notes
+## Architecture notes
 
-- yt-dlp provides broad extractor coverage, but no software can truthfully guarantee every website.
+- yt-dlp provides broad extractor coverage, but no software can truthfully guarantee every website forever; sites can change or block extraction.
 - DRM-protected, private, login-only and paywalled media are not bypassed.
-- The backend selects a real stream at or below the requested height; it does not upscale.
-- Exact final file size is known only after the file is produced. Before download, a size can be estimated but should not be presented as guaranteed.
-- The current progress UI reports actual completed file size after processing. For byte-level live progress/speed, the backend should be moved to a job/streaming architecture (SSE/WebSocket + progress hooks).
-- PWA installation is supported by the manifest. A website cannot silently install a Windows EXE or iOS/Android native app.
+- The backend selects a real stream at or below the requested height; it does not upscale a low-resolution source and call it native 4K.
+- Exact final file size is known after the file is produced.
+- The public website is a static download/presentation page. It cannot silently install native applications.
+- Native Windows and Android applications handle their own update checks.
 
-## Future production modules
+## Release workflow
 
-Authentication/history, Google OAuth, persistent jobs, SSE progress, Redis/queue workers, rate limiting, cleanup, object storage, FFmpeg validation, and a native desktop/mobile shell can be added without changing the main UI.
+Every push to `main` runs the Android + Windows build workflow. The workflow generates a version based on the GitHub Actions run number, builds both platforms, and publishes a new GitHub Release with the APK and Windows installer.
+
+This means future app releases follow the same update path without manually changing the download buttons on the website.
+
+## Responsible use
+
+Download only media that you have permission to save. Do not use the project to bypass DRM, private access controls, paywalls, or other restrictions, and respect copyright and the terms of the source service.
+
+## Developer
+
+**Azan Khan** — 10th class student and independent developer building this project as a practical software-learning project.
