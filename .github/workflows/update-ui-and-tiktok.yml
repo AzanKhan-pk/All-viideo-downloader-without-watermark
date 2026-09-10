@@ -1,0 +1,306 @@
+name: Update downloader UI and TikTok handling
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply requested updates
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          changed = False
+
+          # -------------------------------------------------
+          # Backend: stronger browser-like networking for
+          # extractors that need curl_cffi, including TikTok.
+          # -------------------------------------------------
+          app = Path('app.py')
+          text = app.read_text(encoding='utf-8')
+          old = '''        "socket_timeout": 30,\n\n        "retries": 5,'''
+          new = '''        "socket_timeout": 30,\n\n        # Use curl_cffi browser impersonation when available.\n        # This improves compatibility with modern anti-bot\n        # checks without bypassing private/DRM access controls.\n        "impersonate": "chrome",\n\n        "http_headers": {\n            "User-Agent": (\n                "Mozilla/5.0 (X11; Linux x86_64) "\n                "AppleWebKit/537.36 (KHTML, like Gecko) "\n                "Chrome/140.0.0.0 Safari/537.36"\n            )\n        },\n\n        "retries": 5,'''
+          if old in text and '"impersonate": "chrome"' not in text:
+              text = text.replace(old, new, 1)
+              changed = True
+
+          # Make TikTok failures more informative while keeping the
+          # existing safe behavior for restricted/private/DRM media.
+          old_error = '''        else:\n\n            message = (\n                "Download failed. The source may "\n                "be unsupported, private, restricted, "\n                "DRM-protected, or temporarily unavailable."\n            )\n\n            status = "error"'''
+          new_error = '''        else:\n\n            if "tiktok" in get_domain(url):\n                message = (\n                    "TikTok could not provide downloadable media to the "\n                    "extractor. The downloader now uses browser-style "\n                    "network impersonation, but TikTok can still change "\n                    "or temporarily block extraction. Please try a public "\n                    "video URL again if the platform is temporarily unavailable."\n                )\n            else:\n                message = (\n                    "Download failed. The source may be unsupported, "\n                    "private, restricted, DRM-protected, or temporarily unavailable."\n                )\n\n            status = "error"'''
+          if old_error in text and 'TikTok could not provide downloadable media' not in text:
+              text = text.replace(old_error, new_error, 1)
+              changed = True
+
+          app.write_text(text, encoding='utf-8')
+
+          # -------------------------------------------------
+          # Dependencies: keep curl_cffi and use the latest
+          # stable yt-dlp release floor known by this project.
+          # -------------------------------------------------
+          req = Path('requirements.txt')
+          req_text = req.read_text(encoding='utf-8')
+          req_new = re.sub(r'yt-dlp>=[^\n]+', 'yt-dlp>=2026.8.19', req_text)
+          if req_new != req_text:
+              req.write_text(req_new, encoding='utf-8')
+              changed = True
+
+          # -------------------------------------------------
+          # Frontend: add a compact custom context toolbox.
+          # Desktop: right-click. Touch: long press.
+          # Also adds a dedicated Paste button beside the URL box.
+          # -------------------------------------------------
+          html = Path('templates/index.html')
+          h = html.read_text(encoding='utf-8')
+
+          css_marker = '</style>'
+          css = r'''
+
+/* =========================================================
+   QUICK CONTEXT TOOLBOX
+========================================================= */
+
+.quick-tools {
+    position: fixed;
+    z-index: 10000;
+    min-width: 175px;
+    padding: 7px;
+    border: 1px solid rgba(255,255,255,.13);
+    border-radius: 14px;
+    background: rgba(18,18,29,.97);
+    box-shadow: 0 18px 55px rgba(0,0,0,.55);
+    backdrop-filter: blur(18px);
+    display: none;
+}
+
+.quick-tools.show { display: block; animation: quickToolsIn .12s ease-out; }
+
+@keyframes quickToolsIn {
+    from { opacity: 0; transform: scale(.96) translateY(-3px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.quick-tools button {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #ededf7;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.quick-tools button:hover,
+.quick-tools button:focus-visible {
+    outline: none;
+    background: rgba(124,58,237,.20);
+    color: #fff;
+}
+
+.quick-tools .tool-separator {
+    height: 1px;
+    margin: 5px 3px;
+    background: rgba(255,255,255,.08);
+}
+
+.quick-paste {
+    min-height: 56px;
+    padding: 0 15px;
+    border: 1px solid rgba(250,204,21,.25);
+    border-radius: 14px;
+    background: rgba(250,204,21,.08);
+    color: #facc15;
+    cursor: pointer;
+    font-weight: 850;
+    white-space: nowrap;
+}
+
+.quick-paste:hover {
+    border-color: rgba(250,204,21,.55);
+    background: rgba(250,204,21,.13);
+}
+
+@media (max-width:760px) {
+    .quick-paste { width: 100%; }
+}
+'''
+          if '.quick-tools {' not in h:
+              h = h.replace(css_marker, css + '\n' + css_marker, 1)
+              changed = True
+
+          fetch_marker = '''        <button\n            class="btn"\n            id="fetch"\n            type="button"\n        >\n            Fetch Media\n        </button>'''
+          fetch_replacement = '''        <button\n            class="quick-paste"\n            id="quickPaste"\n            type="button"\n            title="Paste from clipboard"\n        >\n            📋 Paste\n        </button>\n\n        <button\n            class="btn"\n            id="fetch"\n            type="button"\n        >\n            Fetch Media\n        </button>'''
+          if 'id="quickPaste"' not in h and fetch_marker in h:
+              h = h.replace(fetch_marker, fetch_replacement, 1)
+              changed = True
+
+          script_marker = '</script>\n\n</body>'
+          script = r'''
+
+/* =========================================================
+   QUICK CONTEXT TOOLBOX
+========================================================= */
+
+(function initQuickTools() {
+    const urlInput = document.getElementById('url');
+    if (!urlInput || document.getElementById('quickTools')) return;
+
+    const toolbox = document.createElement('div');
+    toolbox.id = 'quickTools';
+    toolbox.className = 'quick-tools';
+    toolbox.innerHTML = `
+        <button type="button" data-tool="cut">✂ Cut</button>
+        <button type="button" data-tool="copy">📋 Copy</button>
+        <button type="button" data-tool="paste">📥 Paste</button>
+        <button type="button" data-tool="select">☑ Select all</button>
+        <div class="tool-separator"></div>
+        <button type="button" data-tool="clear">🗑 Clear</button>
+    `;
+    document.body.appendChild(toolbox);
+
+    let target = urlInput;
+    let longPressTimer = null;
+    let suppressNextContext = false;
+
+    function closeTools() {
+        toolbox.classList.remove('show');
+    }
+
+    function positionTools(x, y) {
+        toolbox.classList.add('show');
+        const pad = 8;
+        const width = toolbox.offsetWidth || 175;
+        const height = toolbox.offsetHeight || 230;
+        toolbox.style.left = Math.max(pad, Math.min(x, window.innerWidth - width - pad)) + 'px';
+        toolbox.style.top = Math.max(pad, Math.min(y, window.innerHeight - height - pad)) + 'px';
+    }
+
+    function openTools(x, y, element) {
+        target = element && ('value' in element) ? element : urlInput;
+        positionTools(x, y);
+        target.focus({preventScroll: true});
+    }
+
+    async function pasteIntoTarget() {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (typeof target.setRangeText === 'function') {
+                const start = target.selectionStart ?? target.value.length;
+                const end = target.selectionEnd ?? target.value.length;
+                target.setRangeText(text, start, end, 'end');
+            } else {
+                target.value = text;
+            }
+            target.dispatchEvent(new Event('input', {bubbles: true}));
+            showToast('Pasted from clipboard.');
+        } catch (error) {
+            showToast('Clipboard permission was not available. Use your browser paste action.');
+        }
+        closeTools();
+    }
+
+    async function runTool(tool) {
+        target.focus({preventScroll: true});
+        try {
+            if (tool === 'cut') {
+                document.execCommand('cut');
+            } else if (tool === 'copy') {
+                document.execCommand('copy');
+                showToast('Copied.');
+            } else if (tool === 'paste') {
+                await pasteIntoTarget();
+                return;
+            } else if (tool === 'select') {
+                target.select();
+            } else if (tool === 'clear') {
+                target.value = '';
+                target.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+        } catch (error) {
+            showToast('That clipboard action was blocked by the browser.');
+        }
+        closeTools();
+    }
+
+    toolbox.addEventListener('click', event => {
+        const button = event.target.closest('[data-tool]');
+        if (button) runTool(button.dataset.tool);
+    });
+
+    document.addEventListener('contextmenu', event => {
+        if (suppressNextContext) {
+            suppressNextContext = false;
+            return;
+        }
+        event.preventDefault();
+        openTools(event.clientX, event.clientY, event.target.closest('input, textarea, [contenteditable="true"]'));
+    });
+
+    document.addEventListener('click', event => {
+        if (!toolbox.contains(event.target)) closeTools();
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeTools();
+    });
+
+    function startLongPress(event) {
+        if (event.pointerType !== 'touch') return;
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+            suppressNextContext = true;
+            openTools(event.clientX, event.clientY, event.target.closest('input, textarea, [contenteditable="true"]'));
+        }, 600);
+    }
+
+    function cancelLongPress() {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }
+
+    document.addEventListener('pointerdown', startLongPress, {passive: true});
+    document.addEventListener('pointerup', cancelLongPress, {passive: true});
+    document.addEventListener('pointercancel', cancelLongPress, {passive: true});
+    document.addEventListener('pointermove', cancelLongPress, {passive: true});
+
+    const pasteButton = document.getElementById('quickPaste');
+    if (pasteButton) pasteButton.addEventListener('click', pasteIntoTarget);
+})();
+'''
+          if 'id="quickTools"' not in h and script_marker in h:
+              h = h.replace(script_marker, script + '\n</script>\n\n</body>', 1)
+              changed = True
+
+          html.write_text(h, encoding='utf-8')
+
+          if not changed:
+              print('No changes needed.')
+          else:
+              print('Requested updates applied.')
+      - name: Commit updates
+        if: success()
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py templates/index.html requirements.txt
+          git commit -m "Add quick context tools and improve TikTok extraction"
+          git push
