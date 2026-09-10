@@ -170,6 +170,7 @@ INJECTED_UI = r"""
 
     const menu = document.createElement('div');
     menu.id = 'avd-context-menu';
+    menu.className = 'avd-context-menu';
     menu.innerHTML = `
       <button type="button" data-action="cut">✂ Cut</button>
       <button type="button" data-action="copy">📋 Copy</button>
