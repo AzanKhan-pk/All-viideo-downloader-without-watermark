@@ -14,14 +14,12 @@ from tkinter import filedialog, messagebox
 import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.62"
 PORT = 5000
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
 
 class WindowsBridge:
-    """Native Windows controls exposed to the web app."""
-
     def __init__(self, data_root):
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
@@ -144,13 +142,11 @@ INJECTED_UI = r"""
 (() => {
   const install = () => {
     if (document.getElementById('avd-native-tools')) return;
-
     const style = document.createElement('style');
     style.id = 'avd-native-tools-style';
     style.textContent = `
       #avd-native-tools { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:2147483646; display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; font-family:Inter,Arial,sans-serif; }
       #avd-native-tools button { border:0; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:800; background:#17122b; color:white; box-shadow:0 5px 18px rgba(0,0,0,.22); }
-      #avd-native-tools button:hover,#avd-context-menu button:hover { transform:translateY(-1px); }
       #avd-folder-label { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,.96); color:#17122b; font-size:12px; box-shadow:0 5px 18px rgba(0,0,0,.16); }
       #avd-context-menu { position:fixed; z-index:2147483647; display:none; min-width:190px; padding:7px; border-radius:13px; background:rgba(24,18,43,.99); box-shadow:0 12px 35px rgba(0,0,0,.35); }
       #avd-context-menu button { display:block; width:100%; text-align:left; border:0; border-radius:9px; padding:10px 12px; cursor:pointer; background:transparent; color:white; font:700 13px Inter,Arial,sans-serif; }
@@ -158,7 +154,6 @@ INJECTED_UI = r"""
       @media(max-width:700px){#avd-native-tools{left:10px;right:10px;transform:none;bottom:10px}.avd-folder-label{max-width:55vw}}
     `;
     document.head.appendChild(style);
-
     const tools = document.createElement('div');
     tools.id = 'avd-native-tools';
     tools.innerHTML = `
@@ -167,10 +162,8 @@ INJECTED_UI = r"""
       <button type="button" id="avd-open">📂 Open folder</button>
     `;
     document.body.appendChild(tools);
-
     const menu = document.createElement('div');
     menu.id = 'avd-context-menu';
-    menu.className = 'avd-context-menu';
     menu.innerHTML = `
       <button type="button" data-action="cut">✂ Cut</button>
       <button type="button" data-action="copy">📋 Copy</button>
@@ -178,41 +171,26 @@ INJECTED_UI = r"""
       <button type="button" data-action="selectall">☑ Select all</button>
     `;
     document.body.appendChild(menu);
-
     const api = window.pywebview && window.pywebview.api;
     const label = document.getElementById('avd-folder-label');
     const refreshFolder = () => {
       if (!api || !api.get_download_folder) { label.textContent='📥 Download folder: Downloads\\Video downloader'; return; }
-      api.get_download_folder().then(path => { label.textContent='📥 Download folder: '+path; label.title=path; }).catch(()=>{});
+      api.get_download_folder().then(path => { if(typeof path==='string'){label.textContent='📥 Download folder: '+path;label.title=path;} }).catch(()=>{});
     };
     document.getElementById('avd-browse').onclick = () => {
-      if (!api || !api.browse_folder) return;
-      api.browse_folder().then(path => { if(typeof path==='string'){label.textContent='📥 Download folder: '+path;label.title=path;} });
+      if (api && api.browse_folder) api.browse_folder().then(path => { if(typeof path==='string'){label.textContent='📥 Download folder: '+path;label.title=path;} });
     };
     document.getElementById('avd-open').onclick = () => { if(api && api.open_download_folder) api.open_download_folder(); };
-
     let lastInput=null;
-    document.addEventListener('focusin',e=>{
-      if(e.target && (e.target.matches?.('input, textarea') || e.target.isContentEditable)) lastInput=e.target;
-    },true);
-    const focusInput=()=>{
-      const el=lastInput||document.activeElement;
-      if(!el)return null;
-      if(el.matches?.('input, textarea')||el.isContentEditable)return el;
-      return null;
-    };
+    document.addEventListener('focusin',e=>{if(e.target && (e.target.matches?.('input, textarea') || e.target.isContentEditable)) lastInput=e.target;},true);
+    const focusInput=()=>{const el=lastInput||document.activeElement;if(!el)return null;if(el.matches?.('input, textarea')||el.isContentEditable)return el;return null;};
     const exec=action=>{
       const el=focusInput();
-      if(action==='selectall'){ if(el?.select)el.select(); else document.execCommand('selectAll'); }
+      if(action==='selectall'){if(el?.select)el.select();else document.execCommand('selectAll');}
       else if(action==='copy')document.execCommand('copy');
       else if(action==='cut')document.execCommand('cut');
       else if(action==='paste'){
-        if(navigator.clipboard?.readText && el){
-          navigator.clipboard.readText().then(text=>{
-            if(el.setRangeText){const s=el.selectionStart??el.value.length,e=el.selectionEnd??s;el.setRangeText(text,s,e,'end');el.dispatchEvent(new Event('input',{bubbles:true}));}
-            else if(el.isContentEditable)document.execCommand('insertText',false,text);
-          }).catch(()=>document.execCommand('paste'));
-        } else document.execCommand('paste');
+        if(navigator.clipboard?.readText && el){navigator.clipboard.readText().then(text=>{if(el.setRangeText){const s=el.selectionStart??el.value.length,e=el.selectionEnd??s;el.setRangeText(text,s,e,'end');el.dispatchEvent(new Event('input',{bubbles:true}));}else if(el.isContentEditable)document.execCommand('insertText',false,text);}).catch(()=>{});}
       }
     };
     document.addEventListener('contextmenu',e=>{
@@ -229,7 +207,8 @@ INJECTED_UI = r"""
     document.addEventListener('keydown',e=>{if(e.key==='Escape')menu.style.display='none';});
     refreshFolder();
   };
-  if(window.pywebview)window.addEventListener('pywebviewready',install,{once:true});else window.addEventListener('load',install,{once:true});
+  const start = () => { setTimeout(install, 250); };
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', start, {once:true}); else start();
 })();
 """
 
@@ -244,10 +223,10 @@ def main():
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1) as response:
-                if response.status == 200: break
+                if response.status == 200:
+                    break
         except Exception:
             time.sleep(0.25)
-
     window = webview.create_window(
         APP_NAME,
         f"http://127.0.0.1:{PORT}",
@@ -258,9 +237,12 @@ def main():
         js_api=bridge,
     )
     def inject_native_ui():
-        try: window.evaluate_js(INJECTED_UI)
-        except Exception: pass
-    webview.start(func=inject_native_ui)
+        try:
+            window.evaluate_js(INJECTED_UI)
+        except Exception:
+            pass
+    window.events.loaded += inject_native_ui
+    webview.start()
 
 
 if __name__ == "__main__":
