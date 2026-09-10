@@ -26,7 +26,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private val executor = Executors.newFixedThreadPool(2)
     private val port = 5000
-    private val currentVersion = "1.0.0"
+    private val currentVersion = "1.0.4"
     private val releaseApi = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -98,8 +98,8 @@ class MainActivity : Activity() {
             try {
                 val conn = URL(releaseApi).openConnection() as HttpURLConnection
                 conn.setRequestProperty("User-Agent", "All-Video-Downloader")
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
                 val release = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
                 val latest = release.optString("tag_name")
                 val assets = release.optJSONArray("assets") ?: return@execute
