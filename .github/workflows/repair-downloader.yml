@@ -1,0 +1,199 @@
+name: Repair downloader UX and TikTok support
+
+on:
+  push:
+    paths:
+      - '.github/workflows/repair-downloader.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch downloader
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # ---------- TikTok URL normalization ----------
+          app = Path('app.py')
+          text = app.read_text(encoding='utf-8')
+
+          if 'import urllib.request' not in text:
+              text = text.replace('from urllib.parse import urlparse\n', 'from urllib.parse import urlparse\nimport urllib.request\n')
+
+          helper = r'''
+
+def normalize_media_url(url):
+    """Normalize common share/redirect URLs before yt-dlp extraction."""
+    value = str(url or '').strip()
+    if not value:
+        return value
+
+    # Remove accidental whitespace/newlines copied from share dialogs.
+    value = re.sub(r'\s+', '', value)
+
+    parsed = urlparse(value)
+    host = parsed.netloc.lower().split(':', 1)[0]
+
+    # TikTok share links such as vt.tiktok.com/... and vm.tiktok.com/...
+    # are redirect URLs. Resolve them before passing the URL to yt-dlp.
+    if host in {'vt.tiktok.com', 'vm.tiktok.com', 'm.tiktok.com'}:
+        try:
+            request = urllib.request.Request(
+                value,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:
+                value = response.geturl()
+        except Exception:
+            pass
+
+    return value
+'''
+          if 'def normalize_media_url(' not in text:
+              marker = '\ndef ffmpeg_available():'
+              text = text.replace(marker, helper + marker, 1)
+
+          if 'url = normalize_media_url(url)' not in text:
+              marker = '    job_dir = (\n        TEMP_DIR /\n        job_id\n    )\n'
+              replacement = marker + '\n    url = normalize_media_url(url)\n    update_job(job_id, url=url, domain=get_domain(url))\n'
+              text = text.replace(marker, replacement, 1)
+
+          app.write_text(text, encoding='utf-8')
+
+          # ---------- In-app Paste + folder bar ----------
+          html = Path('templates/index.html')
+          ht = html.read_text(encoding='utf-8')
+
+          if 'id="avd-paste-url"' not in ht:
+              ht = ht.replace(
+                  '<div class="inputrow">',
+                  '<div class="inputrow">',
+                  1
+              )
+              # Add a visible paste button immediately after the URL input.
+              needle = '</div>\n\n<div class="modes">'
+              insert = '''</div>\n\n<div class="avd-quick-tools">\n    <button class="small-btn primary" id="avd-paste-url" type="button">📋 Paste link</button>\n    <button class="small-btn" id="avd-clear-url" type="button">✕ Clear</button>\n</div>\n\n<div class="modes">'''
+              ht = ht.replace(needle, insert, 1)
+
+          css = r'''
+.avd-quick-tools { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.avd-folderbar { display:flex; align-items:center; justify-content:space-between; gap:9px; flex-wrap:wrap; margin-top:10px; padding:10px 12px; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:rgba(255,255,255,.025); color:#9d9dad; font-size:12px; }
+.avd-folderbar strong { color:#d8caff; font-weight:800; user-select:text; -webkit-user-select:text; }
+'''
+          if '.avd-quick-tools {' not in ht:
+              ht = ht.replace('</style>', css + '\n</style>', 1)
+
+          js = r'''
+
+// Reliable in-app paste controls. These work without relying on a browser context menu.
+(() => {
+  const getUrlInput = () => document.querySelector('.inputrow input') || document.querySelector('input[type="url"]') || document.querySelector('input');
+  const paste = document.getElementById('avd-paste-url');
+  const clear = document.getElementById('avd-clear-url');
+  if (paste) paste.addEventListener('click', async () => {
+    const input = getUrlInput();
+    if (!input) return;
+    try {
+      const value = await navigator.clipboard.readText();
+      input.value = value.trim();
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+      input.focus();
+    } catch (_) {
+      input.focus();
+      document.execCommand('paste');
+    }
+  });
+  if (clear) clear.addEventListener('click', () => {
+    const input = getUrlInput();
+    if (input) { input.value=''; input.dispatchEvent(new Event('input',{bubbles:true})); input.focus(); }
+  });
+})();
+'''
+          if 'Reliable in-app paste controls.' not in ht:
+              ht = ht.replace('</script>', js + '\n</script>', 1)
+
+          # Insert the folder controls directly under the actual Download button area.
+          folder_js = r'''
+
+(() => {
+  const makeFolderBar = () => {
+    if (document.getElementById('avd-folderbar')) return;
+    const area = document.querySelector('.download-area');
+    if (!area) return;
+    const bar = document.createElement('div');
+    bar.id = 'avd-folderbar';
+    bar.className = 'avd-folderbar';
+    bar.innerHTML = '<span>📥 Save to: <strong id="avd-folder-path">Loading…</strong></span><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="small-btn" id="avd-browse-folder" type="button">📁 Browse location</button><button class="small-btn" id="avd-open-folder" type="button">📂 Open folder</button></span>';
+    area.appendChild(bar);
+
+    const refresh = async () => {
+      try {
+        const r = await fetch('/api/download-directory', {cache:'no-store'});
+        const d = await r.json();
+        if (d.directory) document.getElementById('avd-folder-path').textContent = d.directory;
+      } catch (_) {}
+    };
+    document.getElementById('avd-browse-folder').onclick = async () => {
+      try {
+        if (!(window.pywebview && window.pywebview.api && window.pywebview.api.browse_folder)) return;
+        const selected = await window.pywebview.api.browse_folder();
+        if (!selected) return;
+        const r = await fetch('/api/set-download-directory', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({directory:selected})});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Could not change folder');
+        document.getElementById('avd-folder-path').textContent = d.directory;
+      } catch (_) {}
+    };
+    document.getElementById('avd-open-folder').onclick = async () => {
+      try { if (window.pywebview?.api?.open_download_folder) await window.pywebview.api.open_download_folder(); } catch (_) {}
+    };
+    refresh();
+  };
+  const observer = new MutationObserver(makeFolderBar);
+  observer.observe(document.body, {childList:true, subtree:true});
+  makeFolderBar();
+})();
+'''
+          if "const makeFolderBar = () =>" not in ht:
+              ht = ht.replace('</script>', folder_js + '\n</script>', 1)
+
+          html.write_text(ht, encoding='utf-8')
+
+          # ---------- Make Windows right-click reliable ----------
+          launcher = Path('windows/launcher.py')
+          lt = launcher.read_text(encoding='utf-8')
+          old = "document.addEventListener('contextmenu',e=>{\n      const t=e.target, selected=window.getSelection()?.toString();\n      if(t?.matches?.('input, textarea')||t?.isContentEditable||selected){\n        e.preventDefault();\n        menu.style.left=Math.min(e.clientX,window.innerWidth-205)+'px';\n        menu.style.top=Math.min(e.clientY,window.innerHeight-205)+'px';\n        menu.style.display='block';\n      }\n    },true);"
+          new = "document.addEventListener('mousedown',e=>{\n      if(e.button!==2)return;\n      const t=e.target, selected=window.getSelection()?.toString();\n      if(t?.matches?.('input, textarea')||t?.isContentEditable||selected){\n        e.preventDefault();\n        menu.style.left=Math.min(e.clientX,window.innerWidth-205)+'px';\n        menu.style.top=Math.min(e.clientY,window.innerHeight-205)+'px';\n        menu.style.display='block';\n      }\n    },true);"
+          if old in lt:
+              lt = lt.replace(old, new, 1)
+          lt = lt.replace("APP_VERSION = \"1.0.6\"", "APP_VERSION = \"1.0.7\"")
+          launcher.write_text(lt, encoding='utf-8')
+
+      - name: Fix Android release path and version
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/build-platforms.yml')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace("APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -n 1)", "APK=$(find app/build/outputs/apk -type f -name '*.apk' | head -n 1)")
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py templates/index.html windows/launcher.py .github/workflows/build-platforms.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix TikTok links, in-app paste, folder controls and context menu"
+          git push
