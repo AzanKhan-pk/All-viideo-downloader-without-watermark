@@ -8,11 +8,21 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_VERSION: 1.0.${{ github.run_number }}
+  APP_VERSION_CODE: ${{ github.run_number }}
+
 jobs:
   android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Android version
+        shell: bash
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${APP_VERSION_CODE}/" android/app/build.gradle
+          sed -i "s/versionName '[^']*'/versionName '${APP_VERSION}'/" android/app/build.gradle
+          sed -i "s/private val currentVersion = \"[^\"]*\"/private val currentVersion = \"${APP_VERSION}\"/" android/app/src/main/java/pk/azankhan/alldownloader/MainActivity.kt
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -45,6 +55,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set Windows version
+        shell: pwsh
+        run: |
+          $launcher = Get-Content windows/launcher.py -Raw
+          $launcher = [regex]::Replace($launcher, 'APP_VERSION = "[^"]*"', "APP_VERSION = `"$env:APP_VERSION`"")
+          Set-Content windows/launcher.py $launcher -NoNewline
+          $iss = Get-Content windows/setup.iss -Raw
+          $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$env:APP_VERSION`"")
+          Set-Content windows/setup.iss $iss -NoNewline
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -92,9 +111,8 @@ jobs:
           pattern: All-Video-Downloader-*
           merge-multiple: true
           path: release
-      - name: Publish latest release
+      - name: Publish versioned release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v1.0.0 --repo "$GITHUB_REPOSITORY" --yes || true
-          gh release create v1.0.0 release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v1.0.0" --notes "Android APK and Windows installer built from the repository source. Use only for media you are authorized to download."
+          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Use only for media you are authorized to download."
