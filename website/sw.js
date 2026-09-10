@@ -1,4 +1,4 @@
-const CACHE_NAME = "avd-live-v2";
+const CACHE_NAME = "avd-live-v3";
 
 self.addEventListener("install", event => {
   self.skipWaiting();
