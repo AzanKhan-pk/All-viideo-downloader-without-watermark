@@ -28,6 +28,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Configure installable Android release
+        shell: pwsh
+        run: |
+          $gradle = Get-Content android/app/build.gradle -Raw
+          if ($gradle -notmatch 'signingConfig signingConfigs.debug') {
+            $gradle = $gradle -replace '(android \{)', '$1\n    buildTypes { release { signingConfig signingConfigs.debug } }'
+            Set-Content android/app/build.gradle $gradle -NoNewline
+          }
       - name: Build Android APK
         shell: pwsh
         run: |
@@ -41,6 +49,9 @@ jobs:
           $apk = Get-ChildItem android/app/build/outputs/apk -Recurse -Filter *.apk | Select-Object -First 1
           if (-not $apk) { throw 'Android APK was not produced.' }
           Copy-Item $apk.FullName release-android.apk
+          $apksigner = Get-ChildItem "$env:ANDROID_HOME/build-tools" -Recurse -Filter apksigner.bat | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $apksigner) { throw 'Android apksigner was not found.' }
+          & $apksigner.FullName verify --verbose release-android.apk
       - name: Install Windows build dependencies
         shell: pwsh
         run: |
