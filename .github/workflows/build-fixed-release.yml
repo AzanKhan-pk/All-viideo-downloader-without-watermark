@@ -1,0 +1,81 @@
+name: Fixed release build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FIXED_TAG: fixed-${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply targeted fixes
+        run: python tools/release_patch.py
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Build Android APK
+        shell: pwsh
+        run: |
+          $env:APP_VERSION_CODE = "${{ github.run_number }}"
+          $env:APP_VERSION = "1.0.${{ github.run_number }}"
+          (Get-Content android/app/build.gradle -Raw) `
+            -replace 'versionCode [0-9]+', "versionCode $env:APP_VERSION_CODE" `
+            -replace "versionName '[^']*'", "versionName '$env:APP_VERSION'" `
+            | Set-Content android/app/build.gradle -NoNewline
+          gradle --no-daemon --stacktrace -p android assembleRelease
+          $apk = Get-ChildItem android/app/build/outputs/apk -Recurse -Filter *.apk | Select-Object -First 1
+          if (-not $apk) { throw 'Android APK was not produced.' }
+          Copy-Item $apk.FullName release-android.apk
+      - name: Install Windows build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r windows/requirements.txt
+          choco install ffmpeg imagemagick innosetup -y --no-progress
+      - name: Set Windows version
+        shell: pwsh
+        run: |
+          $launcher = Get-Content windows/launcher.py -Raw
+          $launcher = [regex]::Replace($launcher, 'APP_VERSION = "[^"]*"', 'APP_VERSION = "1.0.${{ github.run_number }}"')
+          Set-Content windows/launcher.py $launcher -NoNewline
+          $iss = Get-Content windows/setup.iss -Raw
+          $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', '#define MyAppVersion "1.0.${{ github.run_number }}"')
+          Set-Content windows/setup.iss $iss -NoNewline
+      - name: Generate ICO
+        shell: pwsh
+        run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
+      - name: Build Windows application
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean windows/app.spec
+      - name: Bundle FFmpeg
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/All-Video-Downloader/tools | Out-Null
+          Copy-Item (Get-Command ffmpeg).Source dist/All-Video-Downloader/tools/ffmpeg.exe
+          Copy-Item (Get-Command ffprobe).Source dist/All-Video-Downloader/tools/ffprobe.exe
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
+          if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
+      - name: Publish isolated fixed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Targeted media selection, final-size reporting, public-image support, Pinterest video audio handling, and fixed Windows controls. This build does not bypass DRM, private access, or restricted content."
