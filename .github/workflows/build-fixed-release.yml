@@ -73,9 +73,22 @@ jobs:
           $iss = Get-Content windows/setup.iss -Raw
           $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', '#define MyAppVersion "1.0.${{ github.run_number }}"')
           Set-Content windows/setup.iss $iss -NoNewline
+      - name: Download WebView2 Runtime bootstrapper
+        shell: pwsh
+        run: |
+          $url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
+          Invoke-WebRequest -Uri $url -OutFile windows/webview2bootstrapper.exe -UseBasicParsing
+          if (-not (Test-Path windows/webview2bootstrapper.exe)) { throw 'WebView2 bootstrapper download failed.' }
+          $size = (Get-Item windows/webview2bootstrapper.exe).Length
+          if ($size -lt 100000) { throw "WebView2 bootstrapper is unexpectedly small: $size bytes" }
+          Write-Host "WebView2 bootstrapper downloaded: $size bytes"
       - name: Generate ICO
         shell: pwsh
         run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
+      - name: Verify Windows sources
+        shell: pwsh
+        run: |
+          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss','windows/webview2bootstrapper.exe')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
