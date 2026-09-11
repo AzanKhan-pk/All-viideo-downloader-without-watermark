@@ -134,7 +134,7 @@ main_block = r'''def main():
 
 text, count = re.subn(
     r"def main\(\):[\s\S]*?\n\nif __name__ == \"__main__\":\n    main\(\)",
-    main_block + '\n\nif __name__ == "__main__":\n    main()',
+    lambda _match: main_block + '\n\nif __name__ == "__main__":\n    main()',
     text,
     count=1,
 )
