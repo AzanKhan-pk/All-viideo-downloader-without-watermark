@@ -19,6 +19,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=yes
+CloseApplicationsFilter=All-Video-Downloader.exe
+RestartApplications=no
 
 [Files]
 Source: "..\dist\All-Video-Downloader.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -32,5 +35,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#MyAppExeName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopDownloaderBeforeUninstall"
+
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 Type: filesandordirs; Name: "{localappdata}\All Video Downloader Without Watermark"
