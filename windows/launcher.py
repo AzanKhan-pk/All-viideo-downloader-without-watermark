@@ -69,6 +69,18 @@ class WindowsBridge:
         os.startfile(str(folder))
         return str(folder)
 
+    def read_clipboard(self):
+        """Read Windows clipboard natively so Paste never needs browser clipboard permission."""
+        root = self._root()
+        try:
+            try:
+                value = root.clipboard_get()
+            except tk.TclError:
+                value = ""
+            return str(value or "")
+        finally:
+            root.destroy()
+
 
 def resource_root() -> Path:
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -145,13 +157,13 @@ INJECTED_UI = r"""
     const style = document.createElement('style');
     style.id = 'avd-native-tools-style';
     style.textContent = `
-      #avd-native-tools { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:2147483646; display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; font-family:Inter,Arial,sans-serif; }
+      #avd-native-tools { position:relative; left:auto; bottom:auto; transform:none; z-index:20; width:min(920px,calc(100% - 32px)); margin:28px auto 24px; padding:10px 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; font-family:Inter,Arial,sans-serif; clear:both; }
       #avd-native-tools button { border:0; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:800; background:#17122b; color:white; box-shadow:0 5px 18px rgba(0,0,0,.22); }
       #avd-folder-label { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,.96); color:#17122b; font-size:12px; box-shadow:0 5px 18px rgba(0,0,0,.16); }
       #avd-context-menu { position:fixed; z-index:2147483647; display:none; min-width:190px; padding:7px; border-radius:13px; background:rgba(24,18,43,.99); box-shadow:0 12px 35px rgba(0,0,0,.35); }
       #avd-context-menu button { display:block; width:100%; text-align:left; border:0; border-radius:9px; padding:10px 12px; cursor:pointer; background:transparent; color:white; font:700 13px Inter,Arial,sans-serif; }
       #avd-context-menu button:hover { background:rgba(255,255,255,.12); }
-      @media(max-width:700px){#avd-native-tools{left:10px;right:10px;transform:none;bottom:10px}.avd-folder-label{max-width:55vw}}
+      @media(max-width:700px){#avd-native-tools{width:calc(100% - 20px);margin:22px auto 18px}.avd-folder-label{max-width:55vw}}
     `;
     document.head.appendChild(style);
     const tools = document.createElement('div');
@@ -181,18 +193,43 @@ INJECTED_UI = r"""
       if (api && api.browse_folder) api.browse_folder().then(path => { if(typeof path==='string'){label.textContent='📥 Download folder: '+path;label.title=path;} });
     };
     document.getElementById('avd-open').onclick = () => { if(api && api.open_download_folder) api.open_download_folder(); };
+
     let lastInput=null;
     document.addEventListener('focusin',e=>{if(e.target && (e.target.matches?.('input, textarea') || e.target.isContentEditable)) lastInput=e.target;},true);
     const focusInput=()=>{const el=lastInput||document.activeElement;if(!el)return null;if(el.matches?.('input, textarea')||el.isContentEditable)return el;return null;};
+    const insertText=(el,text)=>{
+      if(!el || !text) return;
+      if(el.setRangeText){
+        const s=el.selectionStart??el.value.length;
+        const e=el.selectionEnd??s;
+        el.setRangeText(text,s,e,'end');
+        el.dispatchEvent(new Event('input',{bubbles:true}));
+        el.dispatchEvent(new Event('change',{bubbles:true}));
+      } else if(el.isContentEditable){
+        el.focus();
+        document.execCommand('insertText',false,text);
+        el.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+    };
+    const nativePaste=()=>{
+      const el=focusInput();
+      if(!el || !api || !api.read_clipboard) return;
+      api.read_clipboard().then(text=>insertText(el,String(text||''))).catch(()=>{});
+    };
     const exec=action=>{
       const el=focusInput();
       if(action==='selectall'){if(el?.select)el.select();else document.execCommand('selectAll');}
       else if(action==='copy')document.execCommand('copy');
       else if(action==='cut')document.execCommand('cut');
-      else if(action==='paste'){
-        if(navigator.clipboard?.readText && el){navigator.clipboard.readText().then(text=>{if(el.setRangeText){const s=el.selectionStart??el.value.length,e=el.selectionEnd??s;el.setRangeText(text,s,e,'end');el.dispatchEvent(new Event('input',{bubbles:true}));}else if(el.isContentEditable)document.execCommand('insertText',false,text);}).catch(()=>{});}
-      }
+      else if(action==='paste')nativePaste();
     };
+
+    // Replace the page Paste button with the native clipboard path. This avoids
+    // navigator.clipboard.readText(), which can repeatedly trigger an access prompt.
+    document.querySelectorAll('.paste-btn, [data-action="paste"], [data-paste], [data-clipboard="paste"]').forEach(btn=>{
+      btn.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();nativePaste();},true);
+    });
+
     document.addEventListener('contextmenu',e=>{
       const t=e.target, selected=window.getSelection()?.toString();
       if(t?.matches?.('input, textarea')||t?.isContentEditable||selected){
