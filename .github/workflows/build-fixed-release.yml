@@ -20,7 +20,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Apply targeted fixes
-        run: python tools/release_patch.py
+        run: |
+          python tools/release_patch.py
+          python tools/tiktok_focus_patch.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -90,4 +92,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Targeted media selection, final-size reporting, public-image support, Pinterest video audio handling, and fixed Windows controls. This build does not bypass DRM, private access, or restricted content."
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "TikTok-focused extraction reliability update, improved browser/TLS request compatibility, media selection, final-size reporting, public-image support, Pinterest video audio handling, and fixed Windows controls. This build does not bypass DRM, private access, or restricted content."
