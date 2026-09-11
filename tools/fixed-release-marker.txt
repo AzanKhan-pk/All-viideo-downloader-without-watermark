@@ -1,0 +1,1 @@
+Fixed release pipeline marker. Build-time patches are applied by .github/workflows/build-fixed-release.yml.
