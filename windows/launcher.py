@@ -12,6 +12,10 @@ import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+# WebView2 can show a completely black client area on some Windows graphics
+# drivers. Set this before importing pywebview so Edge/WebView2 receives it.
+os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
+
 import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
@@ -315,6 +319,7 @@ def main():
         min_size=(900, 650),
         text_select=True,
         js_api=bridge,
+        background_color="#ffffff",
     )
 
     def inject_native_ui():
@@ -324,7 +329,7 @@ def main():
             pass
 
     window.events.loaded += inject_native_ui
-    webview.start()
+    webview.start(gui="edgechromium", debug=False)
 
 
 if __name__ == "__main__":
