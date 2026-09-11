@@ -1,0 +1,317 @@
+name: One-time media and UI fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[media-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply requested fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          app = Path('app.py')
+          text = app.read_text(encoding='utf-8')
+
+          # Browser-like requests improve compatibility for public sources.
+          if 'from curl_cffi import requests as curl_requests' not in text:
+              text = text.replace(
+                  'from urllib.parse import urlparse\n',
+                  'from urllib.parse import urlparse\n\ntry:\n    from curl_cffi import requests as curl_requests\nexcept Exception:\n    curl_requests = None\n'
+              )
+
+          # Replace the extractor options with a clean, compatible configuration.
+          start = text.index('def extractor_options():')
+          end = text.index('\n\n# =========================================================\n# JOBS', start)
+          extractor = '''def extractor_options():\n    options = {\n        "quiet": True,\n        "no_warnings": True,\n        "noplaylist": True,\n        "socket_timeout": 30,\n        "retries": 5,\n        "extractor_retries": 4,\n        "fragment_retries": 5,\n        "file_access_retries": 5,\n        "continuedl": True,\n        "nopart": False,\n        "overwrites": False,\n        "restrictfilenames": False,\n        "windowsfilenames": True,\n        "http_headers": {\n            "User-Agent": (\n                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "\n                "AppleWebKit/537.36 (KHTML, like Gecko) "\n                "Chrome/140.0.0.0 Safari/537.36"\n            ),\n            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",\n            "Accept-Language": "en-US,en;q=0.9",\n        },\n    }\n    if curl_requests is not None:\n        options["impersonate"] = "chrome"\n    return options\n'''
+          text = text[:start] + extractor + text[end:]
+
+          marker = '# =========================================================\n# JOBS\n# =========================================================\n\n'
+          helpers = r'''# =========================================================
+# PUBLIC SOURCE FALLBACKS
+# =========================================================
+
+def is_tiktok_url(url):
+    domain = get_domain(url)
+    return domain == "tiktok.com" or domain.endswith(".tiktok.com")
+
+
+def _script_json(html_text, script_id):
+    match = re.search(
+        rf'<script[^>]+id=["\\\']{re.escape(script_id)}["\\\'][^>]*>(.*?)</script>',
+        html_text,
+        re.S | re.I,
+    )
+    if not match:
+        return None
+    try:
+        import html as html_module
+        import json
+        return json.loads(html_module.unescape(match.group(1).strip()))
+    except Exception:
+        return None
+
+
+def _best_image_url_from_html(html_text):
+    candidates = []
+    patterns = [
+        r'<meta[^>]+property=["\\\']og:image(?::secure_url)?["\\\'][^>]+content=["\\\']([^"\\\']+)',
+        r'<meta[^>]+name=["\\\']twitter:image(?::src)?["\\\'][^>]+content=["\\\']([^"\\\']+)',
+        r'<meta[^>]+content=["\\\']([^"\\\']+)["\\\'][^>]+property=["\\\']og:image(?::secure_url)?["\\\']',
+    ]
+    for pattern in patterns:
+        candidates.extend(re.findall(pattern, html_text, re.I))
+    return candidates[-1] if candidates else None
+
+
+def _image_fallback(url):
+    """Find a public page image (including Pinterest/OpenGraph images)."""
+    lower = url.lower().split('?', 1)[0]
+    if lower.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif')):
+        return {
+            "title": "Image",
+            "thumbnail": url,
+            "webpage_url": url,
+            "domain": get_domain(url),
+            "extractor_key": get_domain(url) or "Direct image",
+            "formats": [],
+            "_avd_image_url": url,
+        }
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"}
+        if curl_requests is not None:
+            response = curl_requests.get(url, headers=headers, timeout=30, allow_redirects=True, impersonate="chrome")
+            response.raise_for_status()
+            html_text = response.text
+            final_url = str(response.url)
+        else:
+            from urllib.request import Request, urlopen
+            response = urlopen(Request(url, headers=headers), timeout=30)
+            html_text = response.read().decode('utf-8', 'replace')
+            final_url = response.geturl()
+        image_url = _best_image_url_from_html(html_text)
+        if not image_url:
+            return None
+        return {
+            "title": "Image",
+            "thumbnail": image_url,
+            "webpage_url": final_url,
+            "domain": get_domain(final_url),
+            "extractor_key": get_domain(final_url) or "Image",
+            "formats": [],
+            "_avd_image_url": image_url,
+        }
+    except Exception:
+        return None
+
+
+def tiktok_web_fallback(url):
+    """Extract public TikTok page data when the normal parser fails."""
+    if not is_tiktok_url(url) or curl_requests is None:
+        return None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.tiktok.com/",
+    }
+    try:
+        response = curl_requests.get(url, headers=headers, timeout=30, allow_redirects=True, impersonate="chrome")
+        response.raise_for_status()
+        html_text = response.text
+        item = None
+        sigi = _script_json(html_text, "SIGI_STATE")
+        if isinstance(sigi, dict):
+            for value in (sigi.get("ItemModule") or {}).values():
+                if isinstance(value, dict) and isinstance(value.get("video"), dict):
+                    item = value
+                    break
+        if item is None:
+            universal = _script_json(html_text, "__UNIVERSAL_DATA_FOR_REHYDRATION__")
+            scope = universal.get("__DEFAULT_SCOPE__", {}) if isinstance(universal, dict) else {}
+            detail = scope.get("webapp.video-detail", {}) if isinstance(scope, dict) else {}
+            item = ((detail.get("itemInfo") or {}).get("itemStruct") if isinstance(detail, dict) else None)
+        if not isinstance(item, dict):
+            return None
+        video = item.get("video") or {}
+        formats = []
+        for index, entry in enumerate(video.get("bitrateInfo") or []):
+            if not isinstance(entry, dict):
+                continue
+            play = entry.get("PlayAddr") or entry.get("playAddr") or {}
+            urls = play.get("UrlList") or play.get("urlList") or []
+            if not urls:
+                continue
+            try: height = int(entry.get("Height") or entry.get("height") or play.get("Height") or play.get("height") or video.get("height"))
+            except Exception: height = None
+            formats.append({"format_id": f"tiktok-web-{index}", "url": urls[-1], "ext": "mp4", "height": height, "width": entry.get("Width") or entry.get("width"), "vcodec": "h264", "acodec": "aac", "tbr": (float(entry.get("Bitrate") or entry.get("bitrate") or 0) / 1000.0) or None, "filesize": None})
+        if not formats:
+            direct = video.get("downloadAddr") or video.get("download_addr") or video.get("playAddr") or video.get("play_addr")
+            if isinstance(direct, dict):
+                urls = direct.get("UrlList") or direct.get("urlList") or []
+                direct = urls[-1] if urls else None
+            if direct:
+                formats.append({"format_id": "tiktok-web-direct", "url": direct, "ext": "mp4", "height": video.get("height"), "width": video.get("width"), "vcodec": "h264", "acodec": "aac", "filesize": None})
+        if not formats:
+            return None
+        formats.sort(key=lambda f: (f.get("height") or 0, f.get("tbr") or 0), reverse=True)
+        author = item.get("author") or {}
+        return {"id": str(item.get("id") or "tiktok"), "title": item.get("desc") or item.get("description") or "TikTok video", "thumbnail": video.get("cover") or video.get("originCover") or video.get("dynamicCover"), "duration": video.get("duration"), "uploader": author.get("uniqueId") if isinstance(author, dict) else author, "extractor": "TikTok", "extractor_key": "TikTok", "domain": "tiktok.com", "webpage_url": str(response.url), "formats": formats, "_avd_tiktok_fallback": True}
+    except Exception:
+        return None
+
+
+def extract_media_info(url):
+    try:
+        with yt_dlp.YoutubeDL(extractor_options()) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception:
+        fallback = tiktok_web_fallback(url)
+        if fallback:
+            return fallback
+        image = _image_fallback(url)
+        if image:
+            return image
+        raise
+
+
+def _download_direct(url, output, job_id, referer=None):
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"}
+    if referer:
+        headers["Referer"] = referer
+    downloaded = 0
+    total = 0
+    if curl_requests is not None:
+        response = curl_requests.get(url, headers=headers, timeout=60, allow_redirects=True, stream=True, impersonate="chrome")
+        response.raise_for_status()
+        total = int(response.headers.get("content-length") or 0)
+        with output.open('wb') as handle:
+            for chunk in response.iter_content(chunk_size=262144):
+                if not chunk:
+                    continue
+                handle.write(chunk)
+                downloaded += len(chunk)
+                update_job(job_id, status="downloading", downloaded_bytes=downloaded, total_bytes=total, percentage=(downloaded / total * 100) if total else 0)
+    else:
+        from urllib.request import Request, urlopen
+        response = urlopen(Request(url, headers=headers), timeout=60)
+        total = int(response.headers.get('Content-Length') or 0)
+        with output.open('wb') as handle:
+            while True:
+                chunk = response.read(262144)
+                if not chunk:
+                    break
+                handle.write(chunk)
+                downloaded += len(chunk)
+                update_job(job_id, status="downloading", downloaded_bytes=downloaded, total_bytes=total, percentage=(downloaded / total * 100) if total else 0)
+    return downloaded, total
+
+
+def has_audio_stream(path):
+    if not ffmpeg_available():
+        return True
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return True
+    try:
+        result = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=20, encoding="utf-8", errors="replace")
+        return bool(result.stdout.strip())
+    except Exception:
+        return True
+
+
+'''
+          if marker in text and 'def extract_media_info(url):' not in text:
+              text = text.replace(marker, marker + helpers, 1)
+
+          # Use the compatibility extraction path for both info and download.
+          text = text.replace('info = ydl.extract_info(\n                url,\n                download=False\n            )', 'info = extract_media_info(url)')
+
+          # Replace the explicit format-id selector with a resolution selector.
+          old_selector = '''            if audio_format:\n\n                # Video-only + best audio.\n                format_selector = (\n                    f"{video_format_id}+bestaudio/"\n                    f"{video_format_id}"\n                )\n\n            else:\n\n                # Try the selected format itself.\n                format_selector = (\n                    str(video_format_id)\n                )'''
+          new_selector = '''            if audio_format:\n                format_selector = (\n                    f"bestvideo[height={selected_height}]+bestaudio/"\n                    f"best[height={selected_height}]"\n                )\n            else:\n                format_selector = f"bestvideo[height={selected_height}]/best[height={selected_height}]"'''
+          if old_selector in text:
+              text = text.replace(old_selector, new_selector, 1)
+
+          # Add image mode handling before normal video/audio format selection.
+          marker2 = '''        # =================================================\n        # AUDIO MODE\n        # =================================================\n\n        if mode == "audio":'''
+          image_block = '''        # =================================================\n        # IMAGE MODE\n        # =================================================\n\n        if mode == "image":\n            image_url = info.get("_avd_image_url") or info.get("thumbnail")\n            if not image_url:\n                thumbnails = info.get("thumbnails") or []\n                candidates = [x.get("url") for x in thumbnails if isinstance(x, dict) and x.get("url")]\n                image_url = candidates[-1] if candidates else None\n            if not image_url:\n                raise RuntimeError("No public image was found for this URL.")\n            extension = "jpg"\n            image_lower = image_url.lower().split("?", 1)[0]\n            for ext in ("png", "webp", "gif", "jpeg", "jpg", "avif"):\n                if image_lower.endswith("." + ext):\n                    extension = "jpg" if ext == "jpeg" else ext\n                    break\n            format_selector = None\n            update_job(job_id, source_height=None, target_height=None)\n\n        # =================================================\n        # AUDIO MODE\n        # =================================================\n\n        elif mode == "audio":'''
+          if marker2 in text:
+              text = text.replace(marker2, image_block, 1)
+
+          # At the actual download step, handle direct image and TikTok fallback.
+          old_download = '''        with yt_dlp.YoutubeDL(\n            options\n        ) as ydl:\n\n            downloaded_info = ydl.extract_info(\n                url,\n                download=True\n            )'''
+          new_download = '''        if mode == "image":\n            direct_output = job_dir / f"image.{extension}"\n            _download_direct(info.get("_avd_image_url") or info.get("thumbnail"), direct_output, job_id, info.get("webpage_url") or url)\n            output_file = direct_output\n        elif info.get("_avd_tiktok_fallback"):\n            direct_formats = [f for f in info.get("formats", []) if f.get("url")]\n            if not direct_formats:\n                raise RuntimeError("TikTok returned no public video stream.")\n            if mode == "video":\n                target_candidates = [f for f in direct_formats if (f.get("height") or 0) >= quality]\n                selected_direct = min(target_candidates, key=lambda f: f.get("height") or 10**9) if target_candidates else max(direct_formats, key=lambda f: f.get("height") or 0)\n            else:\n                selected_direct = direct_formats[0]\n            direct_output = job_dir / "tiktok-direct.mp4"\n            _download_direct(selected_direct["url"], direct_output, job_id, "https://www.tiktok.com/")\n            output_file = direct_output\n        else:\n            with yt_dlp.YoutubeDL(options) as ydl:\n                ydl.extract_info(url, download=True)'''
+          if old_download in text:
+              text = text.replace(old_download, new_download, 1)
+
+          # Allow image mode at the API boundary.
+          text = text.replace('''    if mode not in (\n        "video",\n        "audio"\n    ):''', '''    if mode not in (\n        "video",\n        "audio",\n        "image"\n    ):''')
+
+          # Image mode does not require a numeric quality.
+          text = text.replace('''    if quality < 1:\n\n        quality = 720''', '''    if quality < 1:\n        quality = 720''')
+
+          # Exact final file size is authoritative; progress size is only a live transfer figure.
+          text = text.replace('''                filesize=\n                    total or job.get(\n                        "filesize"\n                    )''', '''                filesize=\n                    job.get("filesize")''')
+
+          app.write_text(text, encoding='utf-8')
+
+          html = Path('templates/index.html')
+          h = html.read_text(encoding='utf-8')
+
+          # Add Image mode while preserving the existing UI.
+          mode_marker = '<button class="chip" data-mode="audio" type="button">🎵 Audio · MP3</button>'
+          image_button = mode_marker + '\n        <button class="chip" data-mode="image" type="button">🖼 Image · JPG/PNG</button>'
+          if 'data-mode="image"' not in h and mode_marker in h:
+              h = h.replace(mode_marker, image_button, 1)
+
+          # Hide quality choices in image mode.
+          h = h.replace(
+              'currentMode = button.dataset.mode; if (lastInfo) renderResult(lastInfo);',
+              'currentMode = button.dataset.mode; document.querySelector(".qualities").style.display = currentMode === "image" ? "none" : "flex"; if (lastInfo) renderResult(lastInfo);'
+          )
+
+          # Image-specific download button text.
+          h = h.replace(
+              '${currentMode === "audio" ? "🎵 Start MP3 Download" : `⬇ Start ${currentQuality}p MP4 Download`}',
+              '${currentMode === "image" ? "🖼 Start Image Download" : (currentMode === "audio" ? "🎵 Start MP3 Download" : `⬇ Start ${currentQuality}p MP4 Download`)}'
+          )
+
+          h = h.replace(
+              'button.textContent = currentMode === "audio" ? "🎵 Start MP3 Download" : `⬇ Start ${currentQuality}p MP4 Download`;',
+              'button.textContent = currentMode === "image" ? "🖼 Start Image Download" : (currentMode === "audio" ? "🎵 Start MP3 Download" : `⬇ Start ${currentQuality}p MP4 Download`);'
+          )
+
+          html.write_text(h, encoding='utf-8')
+
+      - name: Validate Python sources
+        run: |
+          python -m py_compile app.py
+          python - <<'PY'
+          from pathlib import Path
+          t = Path('templates/index.html').read_text(encoding='utf-8')
+          assert 'data-mode="image"' in t
+          assert 'currentMode === "image"' in t
+          print('Source validation passed.')
+          PY
+
+      - name: Commit patch and remove one-time workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/one-time-media-fix.yml
+          git config user.name "Azan Khan"
+          git config user.email "azankokarai@gmail.com"
+          git add app.py templates/index.html .github/workflows/one-time-media-fix.yml
+          git commit -m "Fix media compatibility, image downloads and final sizes [media-fix]"
+          git push
