@@ -68,6 +68,7 @@ jobs:
           python tools/tiktok_focus_patch.py
           python tools/ui_polish_patch.py
           python tools/persistence_gallery_patch.py
+          python tools/fix_windows_runtime.py
       - name: Set Windows version
         shell: pwsh
         run: |
