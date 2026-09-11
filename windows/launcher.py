@@ -14,7 +14,10 @@ from tkinter import filedialog, messagebox
 
 # WebView2 can show a completely black client area on some Windows graphics
 # drivers. Set this before importing pywebview so Edge/WebView2 receives it.
-os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
+os.environ.setdefault(
+    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+    "--disable-gpu --disable-gpu-compositing --disable-features=CalculateNativeWinOcclusion",
+)
 
 import webview
 
@@ -22,6 +25,75 @@ APP_NAME = "All Video Downloader Without Watermark"
 APP_VERSION = "1.0.63"
 PORT = None
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
+WEBVIEW2_BOOTSTRAPPER_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+
+
+def webview2_installed() -> bool:
+    """Return True when Microsoft WebView2 Runtime is available for this PC."""
+    if sys.platform != "win32":
+        return True
+    try:
+        import winreg
+        locations = [
+            (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"),
+            (winreg.HKEY_CURRENT_USER, rf"Software\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"),
+            (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"),
+        ]
+        for hive, key_path in locations:
+            try:
+                with winreg.OpenKey(hive, key_path) as key:
+                    version, _ = winreg.QueryValueEx(key, "pv")
+                    if version and str(version) != "0.0.0.0":
+                        return True
+            except OSError:
+                continue
+    except Exception:
+        return False
+    return False
+
+
+def ensure_webview2_runtime() -> bool:
+    """Install the official Evergreen WebView2 Runtime if it is missing."""
+    if webview2_installed():
+        return True
+
+    target = Path(tempfile.gettempdir()) / "MicrosoftEdgeWebView2Setup.exe"
+    try:
+        req = urllib.request.Request(
+            WEBVIEW2_BOOTSTRAPPER_URL,
+            headers={"User-Agent": APP_NAME},
+        )
+        with urllib.request.urlopen(req, timeout=30) as response, target.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        if not target.exists() or target.stat().st_size < 100_000:
+            raise RuntimeError("Microsoft WebView2 Runtime installer could not be downloaded.")
+
+        subprocess.run(
+            [str(target), "/silent", "/install"],
+            check=False,
+            timeout=180,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if webview2_installed():
+                return True
+            time.sleep(1)
+        return webview2_installed()
+    except Exception as exc:
+        messagebox.showerror(
+            APP_NAME,
+            "Microsoft Edge WebView2 Runtime is required to display the app.\n\n"
+            f"Automatic installation failed:\n{exc}\n\n"
+            "Please install/update WebView2 and start the app again.",
+        )
+        return False
+    finally:
+        try:
+            target.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 class WindowsBridge:
@@ -274,6 +346,8 @@ INJECTED_UI = r"""
 def main():
     global PORT
     check_for_update()
+    if not ensure_webview2_runtime():
+        return
     data_root = prepare_runtime()
     bridge = WindowsBridge(data_root)
     PORT = find_free_port()
