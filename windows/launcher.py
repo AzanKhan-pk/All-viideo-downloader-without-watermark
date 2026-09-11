@@ -1,5 +1,6 @@
 import os
 import shutil
+import socket
 import sys
 import threading
 import time
@@ -14,8 +15,8 @@ from tkinter import filedialog, messagebox
 import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
-APP_VERSION = "1.0.62"
-PORT = 5000
+APP_VERSION = "1.0.63"
+PORT = None
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
 
@@ -103,7 +104,22 @@ def prepare_runtime() -> Path:
     return data_root
 
 
-def start_server(data_root: Path):
+def find_free_port(start=5000, attempts=100):
+    """Pick a local TCP port so an old/stuck process cannot break startup."""
+    for candidate in range(start, start + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", candidate))
+                return candidate
+            except OSError:
+                continue
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def start_server(data_root: Path, port: int):
     sys.path.insert(0, str(data_root))
     import app as downloader_app
     default_download_dir = Path.home() / "Downloads" / "Video downloader"
@@ -111,7 +127,7 @@ def start_server(data_root: Path):
     downloader_app.DOWNLOAD_DIR = default_download_dir
     downloader_app.app.run(
         host="127.0.0.1",
-        port=PORT,
+        port=port,
         debug=False,
         threaded=True,
         use_reloader=False,
@@ -224,8 +240,6 @@ INJECTED_UI = r"""
       else if(action==='paste')nativePaste();
     };
 
-    // Replace the page Paste button with the native clipboard path. This avoids
-    // navigator.clipboard.readText(), which can repeatedly trigger an access prompt.
     document.querySelectorAll('.paste-btn, [data-action="paste"], [data-paste], [data-clipboard="paste"]').forEach(btn=>{
       btn.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();nativePaste();},true);
     });
@@ -251,19 +265,45 @@ INJECTED_UI = r"""
 
 
 def main():
+    global PORT
     check_for_update()
     data_root = prepare_runtime()
     bridge = WindowsBridge(data_root)
-    server = threading.Thread(target=start_server, args=(data_root,), daemon=True)
+    PORT = find_free_port()
+    server_error = []
+
+    def run_server():
+        try:
+            start_server(data_root, PORT)
+        except Exception as exc:
+            server_error.append(exc)
+
+    server = threading.Thread(target=run_server, daemon=True)
     server.start()
+
+    ready = False
     deadline = time.time() + 30
     while time.time() < deadline:
+        if server_error:
+            break
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/health", timeout=1) as response:
-                if response.status == 200:
+            with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/", timeout=1) as response:
+                if 200 <= response.status < 500:
+                    ready = True
                     break
         except Exception:
             time.sleep(0.25)
+
+    if not ready:
+        detail = str(server_error[0]) if server_error else "The local app server did not start."
+        messagebox.showerror(
+            APP_NAME,
+            "The app could not start its local service.\n\n"
+            f"Details: {detail}\n\n"
+            "Please restart the app. No browser page was opened."
+        )
+        return
+
     window = webview.create_window(
         APP_NAME,
         f"http://127.0.0.1:{PORT}",
