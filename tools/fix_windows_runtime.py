@@ -4,7 +4,6 @@ import os
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "windows" / "launcher.py"
 
@@ -12,14 +11,8 @@ LAUNCHER = ROOT / "windows" / "launcher.py"
 def main() -> None:
     text = LAUNCHER.read_text(encoding="utf-8")
 
-    # Replace only the launcher entry point.  Use a callable replacement so
-    # backslash escapes such as \n remain literal Python source instead of
-    # being interpreted by re.sub's replacement-string parser.
     main_block = r'''def main():
     global PORT
-
-    # Disable GPU acceleration in WebView2.  This prevents a black/blank
-    # window on systems with old or incompatible graphics drivers.
     os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
 
     data_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AllVideoDownloader"
@@ -30,16 +23,16 @@ def main() -> None:
     server_thread.start()
 
     if not wait_for_server(PORT, timeout=30):
+        detail = startup_error or "Local service did not become ready."
         messagebox.showerror(
             "All Video Downloader",
             "The app could not start its local service.\n\n"
-            f"Details: {startup_error or 'Local service did not become ready.'}\n\n"
+            f"Details: {detail}\n\n"
             "Please restart the app. No browser page was opened.",
         )
         return
 
     url = f"http://127.0.0.1:{PORT}/"
-
     window = webview.create_window(
         "All Video Downloader Without Watermark",
         url,
@@ -52,8 +45,6 @@ def main() -> None:
     tray_icon = create_tray_icon(window)
 
     def on_closed():
-        # Keep the Flask worker alive through the tray process so active
-        # downloads can continue after the WebView window is closed.
         return
 
     window.events.closed += on_closed
@@ -70,12 +61,7 @@ if __name__ == "__main__":
     main()'''
 
     pattern = r"def main\(\):[\s\S]*?\n\nif __name__ == \"__main__\":\n    main\(\)"
-    text, count = re.subn(
-        pattern,
-        lambda _match: main_block,
-        text,
-        count=1,
-    )
+    text, count = re.subn(pattern, lambda _m: main_block, text, count=1)
     if count != 1:
         raise SystemExit("Patch target not found: launcher main block")
 
