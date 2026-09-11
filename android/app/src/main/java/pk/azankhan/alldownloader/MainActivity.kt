@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -29,7 +30,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private val executor = Executors.newFixedThreadPool(2)
     private val port = 5000
-    private val currentVersion = "1.0.6"
+    private val currentVersion = "1.0.7"
     private val releaseApi = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -56,9 +57,6 @@ class MainActivity : Activity() {
         webView.settings.allowFileAccess = true
         webView.settings.allowContentAccess = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
-
-        // Keep Android WebView's native long-press selection menu enabled.
-        // This gives users the normal Select / Copy / Share / Paste actions.
         webView.isLongClickable = true
         webView.setHapticFeedbackEnabled(true)
         webView.setOnLongClickListener { false }
@@ -152,25 +150,40 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun launchApkInstaller(apk: File) {
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
+            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = uri
+                type = "application/vnd.android.package-archive"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(installIntent)
+        } catch (e: Exception) {
+            Log.e("AVD", "APK installer launch failed", e)
+            runOnUiThread { Toast.makeText(this, "Android could not open the APK installer: ${e.message}", Toast.LENGTH_LONG).show() }
+        }
+    }
+
     private fun downloadUpdate(url: String) {
         executor.execute {
             try {
                 val apk = File(cacheDir, "All-Video-Downloader-Update.apk")
+                if (apk.exists()) apk.delete()
                 URL(url).openStream().use { input -> apk.outputStream().use { output -> input.copyTo(output) } }
+                if (!apk.exists() || apk.length() < 100_000L) throw IllegalStateException("Downloaded APK is incomplete")
                 runOnUiThread {
-                    if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
                         startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-                        Toast.makeText(this, "Allow installs from this app, then press Update again.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Allow installs from this app, then tap Update again.", Toast.LENGTH_LONG).show()
                     } else {
-                        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
-                        startActivity(Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "application/vnd.android.package-archive")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        })
+                        launchApkInstaller(apk)
                     }
                 }
-            } catch (_: Exception) {
-                runOnUiThread { Toast.makeText(this, "Update download failed", Toast.LENGTH_LONG).show() }
+            } catch (e: Exception) {
+                Log.e("AVD", "Update download failed", e)
+                runOnUiThread { Toast.makeText(this, "Update download failed: ${e.message}", Toast.LENGTH_LONG).show() }
             }
         }
     }
