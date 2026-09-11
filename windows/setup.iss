@@ -39,5 +39,5 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#MyAppExeName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopDownloaderBeforeUninstall"
 
 [UninstallDelete]
-Type: filesanddirs; Name: "{app}"
-Type: filesanddirs; Name: "{localappdata}\All Video Downloader Without Watermark"
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\All Video Downloader Without Watermark"
