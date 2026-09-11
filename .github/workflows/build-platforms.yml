@@ -35,15 +35,18 @@ jobs:
           gradle-version: '8.13'
       - name: Enable AndroidX
         run: echo 'android.useAndroidX=true' >> android/gradle.properties
-      - name: Build release APK
+      - name: Build signed release APK
         working-directory: android
         run: gradle --no-daemon --stacktrace assembleRelease
-      - name: Find and rename APK
+      - name: Verify signed APK
         shell: bash
         run: |
           set -e
           APK=$(find android/app/build/outputs -type f -name '*.apk' | head -n 1)
           test -n "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$APK"
           cp "$APK" All-Video-Downloader.apk
           ls -lh All-Video-Downloader.apk
       - uses: actions/upload-artifact@v4
@@ -122,4 +125,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Windows includes persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, and public image gallery support. Use only for public media you are authorized to download."
+          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Android release APK is signed and verified before publication. Windows includes persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, and public image gallery support. Use only for public media you are authorized to download."
