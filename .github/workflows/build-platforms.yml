@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -n 1)
+          APK=$(find android/app/build/outputs -type f -name '*.apk' | head -n 1)
           test -n "$APK"
           cp "$APK" All-Video-Downloader.apk
           ls -lh All-Video-Downloader.apk
@@ -55,6 +55,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply Windows app fixes
+        shell: pwsh
+        run: |
+          python tools/release_patch.py
+          python tools/tiktok_focus_patch.py
+          python tools/ui_polish_patch.py
+          python tools/persistence_gallery_patch.py
       - name: Set Windows version
         shell: pwsh
         run: |
@@ -64,9 +74,6 @@ jobs:
           $iss = Get-Content windows/setup.iss -Raw
           $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$env:APP_VERSION`"")
           Set-Content windows/setup.iss $iss -NoNewline
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
       - name: Install build dependencies
         shell: pwsh
         run: |
@@ -115,4 +122,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Use only for media you are authorized to download."
+          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Windows includes persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, and public image gallery support. Use only for public media you are authorized to download."
