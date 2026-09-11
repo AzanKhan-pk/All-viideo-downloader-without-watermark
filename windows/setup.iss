@@ -27,12 +27,14 @@ RestartApplications=no
 Source: "..\dist\All-Video-Downloader.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\All-Video-Downloader\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "webview2bootstrapper.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
 
 [Run]
+Filename: "{tmp}\webview2bootstrapper.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft Edge WebView2 Runtime..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
