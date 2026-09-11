@@ -153,7 +153,10 @@ def check_for_update():
         asset = next((a for a in assets if a.get("name", "").lower().endswith("setup.exe")), None)
         if not asset:
             return
-        answer = messagebox.askyesno(APP_NAME, f"A new version ({latest}) is available.\n\nUpdate now?")
+        answer = messagebox.askyesno(
+            APP_NAME,
+            f"A new version ({latest}) is available.\n\nUpdate now?",
+        )
         if not answer:
             return
         target = Path(tempfile.gettempdir()) / "All-Video-Downloader-Update.exe"
@@ -300,7 +303,7 @@ def main():
             APP_NAME,
             "The app could not start its local service.\n\n"
             f"Details: {detail}\n\n"
-            "Please restart the app. No browser page was opened."
+            "Please restart the app. No browser page was opened.",
         )
         return
 
@@ -309,15 +312,17 @@ def main():
         f"http://127.0.0.1:{PORT}",
         width=1200,
         height=820,
-        min_size=(900,650),
+        min_size=(900, 650),
         text_select=True,
         js_api=bridge,
     )
+
     def inject_native_ui():
         try:
             window.evaluate_js(INJECTED_UI)
         except Exception:
             pass
+
     window.events.loaded += inject_native_ui
     webview.start()
 
