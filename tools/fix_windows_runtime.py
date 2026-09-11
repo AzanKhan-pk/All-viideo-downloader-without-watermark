@@ -10,7 +10,6 @@ LAUNCHER = ROOT / "windows" / "launcher.py"
 
 def main() -> None:
     text = LAUNCHER.read_text(encoding="utf-8")
-
     main_block = '''def main():
     global PORT
     os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
@@ -41,15 +40,9 @@ def main() -> None:
         min_size=(900, 650),
         background_color="#ffffff",
     )
-
     tray_icon = create_tray_icon(window)
-
-    def on_closed():
-        return
-
-    window.events.closed += on_closed
+    window.events.closed += lambda: None
     webview.start(storage_path=str(data_root / "webview2"), private_mode=True)
-
     if tray_icon is not None:
         try:
             tray_icon.stop()
@@ -58,14 +51,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
-'''
-
+    main()'''
     pattern = r"def main\(\):[\s\S]*?\n\nif __name__ == \"__main__\":\n    main\(\)"
-    text, count = re.subn(pattern, lambda _m: main_block.rstrip(), text, count=1)
+    text, count = re.subn(pattern, lambda _m: main_block, text, count=1)
     if count != 1:
         raise SystemExit("Patch target not found: launcher main block")
-
     LAUNCHER.write_text(text, encoding="utf-8")
     print("Windows runtime patch applied successfully.")
 
