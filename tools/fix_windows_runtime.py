@@ -11,7 +11,7 @@ LAUNCHER = ROOT / "windows" / "launcher.py"
 def main() -> None:
     text = LAUNCHER.read_text(encoding="utf-8")
 
-    main_block = r'''def main():
+    main_block = '''def main():
     global PORT
     os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")
 
@@ -26,8 +26,8 @@ def main() -> None:
         detail = startup_error or "Local service did not become ready."
         messagebox.showerror(
             "All Video Downloader",
-            "The app could not start its local service.\n\n"
-            f"Details: {detail}\n\n"
+            "The app could not start its local service.\\n\\n"
+            f"Details: {detail}\\n\\n"
             "Please restart the app. No browser page was opened.",
         )
         return
@@ -58,10 +58,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()'''
+    main()
+'''
 
     pattern = r"def main\(\):[\s\S]*?\n\nif __name__ == \"__main__\":\n    main\(\)"
-    text, count = re.subn(pattern, lambda _m: main_block, text, count=1)
+    text, count = re.subn(pattern, lambda _m: main_block.rstrip(), text, count=1)
     if count != 1:
         raise SystemExit("Patch target not found: launcher main block")
 
