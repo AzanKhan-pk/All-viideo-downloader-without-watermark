@@ -61,7 +61,6 @@ class WindowsBridge:
             return str(self.download_dir)
 
     def open_download_folder(self):
-        import os
         folder = Path(self.get_download_folder())
         folder.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":
@@ -98,7 +97,6 @@ def resource_root() -> Path:
 
 
 def prepare_runtime() -> Path:
-    import os
     root = resource_root()
     data_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
     data_root.mkdir(parents=True, exist_ok=True)
@@ -168,7 +166,6 @@ def check_for_update():
 
 
 def locate_browser():
-    import os
     candidates = [
         os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Google\Chrome\Application\chrome.exe",
         os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Google\Chrome\Application\chrome.exe",
@@ -232,10 +229,7 @@ def main():
 
     if not ready:
         detail = str(server_error[0]) if server_error else "The local app server did not start."
-        messagebox.showerror(
-            APP_NAME,
-            "The app could not start its local service.\n\nDetails: " + detail,
-        )
+        messagebox.showerror(APP_NAME, "The app could not start its local service.\n\nDetails: " + detail)
         return
 
     url = f"http://127.0.0.1:{PORT}"
@@ -243,8 +237,7 @@ def main():
         messagebox.showerror(APP_NAME, "No web browser could be opened for the app.")
         return
 
-    # Keep the local Flask process alive so downloads continue even when the
-    # browser window is closed. Inno Setup terminates this EXE during uninstall.
+    # Keep the local Flask process alive so downloads continue even when the browser window is closed.
     while True:
         time.sleep(60)
 
