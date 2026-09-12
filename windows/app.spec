@@ -1,6 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
 
 # Resolve the repository root from this spec file without relying on runtime paths.
 root = Path.cwd().resolve()
@@ -12,9 +11,10 @@ else:
     raise SystemExit(f"Repository root not found. cwd={root}")
 
 launcher = root / "windows" / "launcher.py"
-hiddenimports = [m for m in collect_submodules("webview") if ".platforms.android" not in m]
 
-
+# Windows no longer embeds WebView2. The Flask UI is rendered by the installed
+# system browser in app mode, so no WebView2 hidden imports or runtime hook are
+# needed in the executable.
 a = Analysis(
     [str(launcher)],
     pathex=[str(root), str(root / "windows")],
@@ -24,11 +24,11 @@ a = Analysis(
         (str(root / "templates"), "templates"),
         (str(root / "static"), "static"),
     ],
-    hiddenimports=hiddenimports,
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(root / "windows" / "webview2_runtime_hook.py")],
-    excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3"],
+    runtime_hooks=[],
+    excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3", "webview"],
     noarchive=False,
 )
 
