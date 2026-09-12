@@ -8,19 +8,18 @@ import tempfile
 import threading
 import time
 import urllib.request
-import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 APP_NAME = "All Video Downloader Without Watermark"
-APP_VERSION = "1.0.63"
+APP_VERSION = "1.0.64"
 PORT = None
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
 
 class WindowsBridge:
-    """Windows-only helpers retained for the existing browser UI integration."""
+    """Windows-only helpers retained for the existing downloader UI."""
     def __init__(self, data_root):
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
@@ -165,37 +164,37 @@ def check_for_update():
         pass
 
 
-def locate_browser():
+def locate_bundled_browser():
+    root = resource_root()
     candidates = [
-        os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\BraveSoftware\Brave-Browser\Application\brave.exe",
+        root / "avd_browser" / "chrome.exe",
+        root / "avd_browser" / "chrome-win" / "chrome.exe",
     ]
-    for raw in candidates:
-        if raw and Path(raw).is_file():
-            return raw
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
     return None
 
 
 def launch_browser_app(url, data_root):
-    browser = locate_browser()
-    if browser:
-        profile = data_root / "BrowserProfile"
-        profile.mkdir(parents=True, exist_ok=True)
-        subprocess.Popen([
-            browser,
-            f"--app={url}",
-            "--new-window",
-            f"--user-data-dir={profile}",
-            "--no-first-run",
-            "--no-default-browser-check",
-        ], close_fds=True)
-        return True
-    return bool(webbrowser.open_new(url))
+    browser = locate_bundled_browser()
+    if not browser:
+        raise FileNotFoundError("Bundled app browser is missing from the Windows release.")
+    profile = data_root / "BrowserProfile"
+    profile.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([
+        str(browser),
+        f"--app={url}",
+        "--new-window",
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-gpu",
+        "--disable-gpu-compositing",
+        "--disable-gpu-vsync",
+        "--disable-features=UseSkiaRenderer",
+    ], cwd=str(browser.parent), close_fds=True)
+    return True
 
 
 def main():
@@ -233,11 +232,13 @@ def main():
         return
 
     url = f"http://127.0.0.1:{PORT}"
-    if not launch_browser_app(url, data_root):
-        messagebox.showerror(APP_NAME, "No web browser could be opened for the app.")
+    try:
+        launch_browser_app(url, data_root)
+    except Exception as exc:
+        messagebox.showerror(APP_NAME, "The bundled app browser could not start.\n\nDetails: " + str(exc))
         return
 
-    # Keep the local Flask process alive so downloads continue even when the browser window is closed.
+    # Keep the local Flask process alive so downloads continue even after the UI window closes.
     while True:
         time.sleep(60)
 
