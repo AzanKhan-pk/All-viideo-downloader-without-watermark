@@ -19,6 +19,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Ensure required Python imports
+        shell: pwsh
+        run: python tools/ensure_os_import.py
       - name: Apply targeted fixes
         run: |
           python tools/release_patch.py
