@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox
 # drivers. Set this before importing pywebview so Edge/WebView2 receives it.
 os.environ.setdefault(
     "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-    "--disable-gpu --disable-gpu-compositing --disable-features=CalculateNativeWinOcclusion",
+    "--use-gl=angle --use-angle=swiftshader --disable-gpu-compositing --disable-features=CalculateNativeWinOcclusion",
 )
 
 import webview
@@ -178,6 +178,13 @@ def prepare_runtime() -> Path:
     if bundled_tools.exists():
         os.environ["PATH"] = str(bundled_tools) + os.pathsep + os.environ.get("PATH", "")
     return data_root
+
+
+def configure_webview2_user_data_folder(data_root: Path) -> None:
+    """Use a writable, app-owned WebView2 profile instead of the executable folder."""
+    udf = data_root / "WebView2Data-v2"
+    udf.mkdir(parents=True, exist_ok=True)
+    os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(udf)
 
 
 def find_free_port(start=5000, attempts=100):
@@ -349,6 +356,7 @@ def main():
     if not ensure_webview2_runtime():
         return
     data_root = prepare_runtime()
+    configure_webview2_user_data_folder(data_root)
     bridge = WindowsBridge(data_root)
     PORT = find_free_port()
     server_error = []
