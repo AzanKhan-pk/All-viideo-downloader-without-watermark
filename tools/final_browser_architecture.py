@@ -52,6 +52,10 @@ BROWSER_MAIN = '''def main():
 launcher = LAUNCHER.read_text(encoding="utf-8")
 if "def launch_browser_app(" not in launcher:
     raise SystemExit("Final browser patch requires launch_browser_app().")
+# Make the generated launcher self-contained even if an earlier build patch
+# changes its module-level imports.
+if not re.search(r"^import os\s*$", launcher, re.M):
+    launcher = "import os\n" + launcher
 launcher, count = re.subn(
     r'def main\(\):[\s\S]*?\n\nif __name__ == "__main__":\n    main\(\)',
     lambda _match: BROWSER_MAIN + '\n\nif __name__ == "__main__":\n    main()',
