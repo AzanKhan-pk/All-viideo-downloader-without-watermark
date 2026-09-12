@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "windows" / "launcher.py"
 APP = ROOT / "app.py"
 
-BROWSER_MAIN = '''def main():
+BROWSER_MAIN = r'''def main():
     global PORT
     check_for_update()
     data_root = prepare_runtime()
@@ -102,7 +102,6 @@ def native_open_file(filename):
         app = app.replace(marker, block + marker, 1)
         APP.write_text(app, encoding="utf-8")
     else:
-        # No compatible home marker; leave app.py unchanged and continue.
         print("Optional native endpoint marker not present; skipping endpoint insertion.")
 
 print("Final Windows architecture patch completed: installed system browser app mode is used instead of embedded WebView2.")
