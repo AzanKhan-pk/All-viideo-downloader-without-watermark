@@ -27,6 +27,9 @@ jobs:
           python tools/persistence_gallery_patch.py
           python tools/fix_windows_runtime.py
           python tools/final_browser_architecture.py
+      - name: Validate generated Windows launcher
+        shell: pwsh
+        run: python -m py_compile windows/launcher.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -52,6 +55,9 @@ jobs:
             -replace 'versionCode [0-9]+', "versionCode $env:APP_VERSION_CODE" `
             -replace "versionName '[^']*'", "versionName '$env:APP_VERSION'" `
             | Set-Content android/app/build.gradle -NoNewline
+          $main = Get-Content android/app/src/main/java/pk/azankhan/alldownloader/MainActivity.kt -Raw
+          $main = [regex]::Replace($main, 'private val currentVersion = "[^"]*"', "private val currentVersion = `"$env:APP_VERSION`"")
+          Set-Content android/app/src/main/java/pk/azankhan/alldownloader/MainActivity.kt $main -NoNewline
           gradle --no-daemon --stacktrace -p android assembleRelease
           $apk = Get-ChildItem android/app/build/outputs -Recurse -File -Filter *.apk | Select-Object -First 1
           if (-not $apk) { throw 'Android APK was not produced.' }
