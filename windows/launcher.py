@@ -165,21 +165,37 @@ def check_for_update():
 
 
 def locate_bundled_browser():
-    root = resource_root()
-    candidates = [
-        root / "avd_browser" / "chrome.exe",
-        root / "avd_browser" / "chrome-win" / "chrome.exe",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    # In a PyInstaller one-file build, _MEIPASS is a temporary extraction folder.
+    # The separately bundled Chromium folder is installed beside the real EXE,
+    # so check both locations. This fixes the "browser is missing" false error.
+    roots = [resource_root()]
+    try:
+        roots.append(Path(sys.executable).resolve().parent)
+    except Exception:
+        pass
+    try:
+        roots.append(Path(__file__).resolve().parent)
+    except Exception:
+        pass
+    seen = set()
+    for root in roots:
+        root = root.resolve()
+        if root in seen:
+            continue
+        seen.add(root)
+        for candidate in (
+            root / "avd_browser" / "chrome.exe",
+            root / "avd_browser" / "chrome-win" / "chrome.exe",
+        ):
+            if candidate.is_file():
+                return candidate
     return None
 
 
 def launch_browser_app(url, data_root):
     browser = locate_bundled_browser()
     if not browser:
-        raise FileNotFoundError("Bundled app browser is missing from the Windows release.")
+        raise FileNotFoundError("Bundled app browser is missing from this Windows release.")
     profile = data_root / "BrowserProfile"
     profile.mkdir(parents=True, exist_ok=True)
     subprocess.Popen([
@@ -238,7 +254,6 @@ def main():
         messagebox.showerror(APP_NAME, "The bundled app browser could not start.\n\nDetails: " + str(exc))
         return
 
-    # Keep the local Flask process alive so downloads continue even after the UI window closes.
     while True:
         time.sleep(60)
 
