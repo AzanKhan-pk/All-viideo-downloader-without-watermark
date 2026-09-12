@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "windows" / "launcher.py"
 APP = ROOT / "app.py"
 
-BROWSER_MAIN = r'''def main():
+BROWSER_MAIN = '''def main():
     global PORT
     check_for_update()
     data_root = prepare_runtime()
@@ -35,7 +35,7 @@ BROWSER_MAIN = r'''def main():
 
     if not ready:
         detail = str(server_error[0]) if server_error else "The local app server did not start."
-        messagebox.showerror(APP_NAME, "The app could not start its local service.\n\n" f"Details: {detail}")
+        messagebox.showerror(APP_NAME, "The app could not start its local service.\\n\\n" f"Details: {detail}")
         return
 
     url = f"http://127.0.0.1:{PORT}"
@@ -54,7 +54,7 @@ if "def launch_browser_app(" not in launcher:
     raise SystemExit("Final browser patch requires launch_browser_app().")
 launcher, count = re.subn(
     r'def main\(\):[\s\S]*?\n\nif __name__ == "__main__":\n    main\(\)',
-    BROWSER_MAIN + '\n\nif __name__ == "__main__":\n    main()',
+    lambda _match: BROWSER_MAIN + '\n\nif __name__ == "__main__":\n    main()',
     launcher,
     count=1,
 )
@@ -80,7 +80,6 @@ def native_browse_folder():
         selected = filedialog.askdirectory(parent=root, title="Choose Video Download Folder", initialdir=str(DOWNLOAD_DIR))
         root.destroy()
         if selected:
-            DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
             globals()["DOWNLOAD_DIR"] = Path(selected).resolve()
             globals()["DOWNLOAD_DIR"].mkdir(parents=True, exist_ok=True)
         return jsonify({"path": str(DOWNLOAD_DIR)})
