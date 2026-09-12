@@ -71,20 +71,43 @@ if "def main(" not in launcher:
     raise SystemExit("Final browser patch requires a Windows launcher main().")
 if not re.search(r"^import os\s*$", launcher, re.M):
     launcher = "import os\n" + launcher
-if "def locate_bundled_browser(" not in launcher:
-    browser_helpers = r'''
+
+# PyInstaller one-file builds extract Python resources into _MEIPASS, but the
+# external Chromium folder is installed beside the real executable. Keep both
+# locations in the generated launcher so the packaged browser is always found.
+browser_helpers = r'''
 
 def locate_bundled_browser():
-    root = resource_root()
-    candidates = [
-        root / "avd_browser" / "chrome.exe",
-        root / "avd_browser" / "chrome-win" / "chrome.exe",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    roots = [resource_root()]
+    try:
+        roots.append(Path(sys.executable).resolve().parent)
+    except Exception:
+        pass
+    try:
+        roots.append(Path(__file__).resolve().parent)
+    except Exception:
+        pass
+    seen = set()
+    for root in roots:
+        root = root.resolve()
+        if root in seen:
+            continue
+        seen.add(root)
+        for candidate in (
+            root / "avd_browser" / "chrome.exe",
+            root / "avd_browser" / "chrome-win" / "chrome.exe",
+        ):
+            if candidate.is_file():
+                return candidate
     return None
 '''
+launcher, helper_count = re.subn(
+    r'\ndef locate_bundled_browser\(\):[\s\S]*?\n\ndef launch_browser_app\(',
+    browser_helpers + "\n\ndef launch_browser_app(",
+    launcher,
+    count=1,
+)
+if helper_count == 0:
     marker = "\ndef launch_browser_app(" if "def launch_browser_app(" in launcher else "\ndef main("
     launcher = launcher.replace(marker, browser_helpers + marker, 1)
 launcher, count = re.subn(
@@ -137,4 +160,4 @@ def native_open_file(filename):
     else:
         print("Optional native endpoint marker not present; skipping endpoint insertion.")
 
-print("Final Windows architecture patch completed: bundled Chromium app shell is used without requiring an installed Chrome/Edge browser.")
+print("Final Windows architecture patch completed: bundled Chromium app shell lookup supports PyInstaller one-file installs.")
