@@ -1,9 +1,7 @@
-name: Build Android and Windows releases
+name: Legacy platform build (manual only)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
@@ -12,11 +10,17 @@ env:
   APP_VERSION: 1.0.${{ github.run_number }}
   APP_VERSION_CODE: ${{ github.run_number }}
 
+# This workflow is intentionally manual. The automatic fixed-release pipeline is
+# .github/workflows/build-fixed-release.yml, which contains the current Android
+# foreground-service and bundled Windows app-shell fixes.
 jobs:
   android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Set Android version
         shell: bash
         run: |
@@ -27,9 +31,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
@@ -48,7 +49,6 @@ jobs:
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose "$APK"
           cp "$APK" All-Video-Downloader.apk
-          ls -lh All-Video-Downloader.apk
       - uses: actions/upload-artifact@v4
         with:
           name: All-Video-Downloader-Android
@@ -61,10 +61,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Ensure required Python imports
-        shell: pwsh
-        run: python tools/ensure_os_import.py
-      - name: Apply Windows app patches
+      - name: Apply current release patches
         shell: pwsh
         run: |
           python tools/release_patch.py
@@ -73,15 +70,12 @@ jobs:
           python tools/persistence_gallery_patch.py
           python tools/fix_windows_runtime.py
           python tools/final_browser_architecture.py
-      - name: Set Windows version
+          python tools/final_download_reliability_patch.py
+      - name: Validate Python sources
         shell: pwsh
         run: |
-          $launcher = Get-Content windows/launcher.py -Raw
-          $launcher = [regex]::Replace($launcher, 'APP_VERSION = "[^"]*"', "APP_VERSION = `"$env:APP_VERSION`"")
-          Set-Content windows/launcher.py $launcher -NoNewline
-          $iss = Get-Content windows/setup.iss -Raw
-          $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$env:APP_VERSION`"")
-          Set-Content windows/setup.iss $iss -NoNewline
+          python -m py_compile app.py
+          python -m py_compile windows/launcher.py
       - name: Install build dependencies
         shell: pwsh
         run: |
@@ -91,10 +85,6 @@ jobs:
       - name: Generate ICO from project SVG
         shell: pwsh
         run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
-      - name: Verify Windows sources
-        shell: pwsh
-        run: |
-          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
@@ -108,10 +98,7 @@ jobs:
         shell: pwsh
         run: |
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
-          $setup = Join-Path (Get-Location) 'release/All-Video-Downloader-Setup.exe'
-          if (-not (Test-Path $setup)) { throw "Installer was not produced at $setup" }
-          Write-Host "Installer exists: $setup"
-          Get-Item $setup | Format-List FullName,Length
+          if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
       - uses: actions/upload-artifact@v4
         with:
           name: All-Video-Downloader-Windows
@@ -126,8 +113,8 @@ jobs:
           pattern: All-Video-Downloader-*
           merge-multiple: true
           path: release
-      - name: Publish versioned release
+      - name: Publish manual legacy build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Android release APK is signed and verified before publication. Windows keeps the Flask downloader backend but uses the installed system browser in app mode instead of an embedded WebView2 renderer, removing the legacy-GPU WebView2 black-screen failure path. Use only for public media you are authorized to download."
+          gh release create "legacy-v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Legacy manual build ${APP_VERSION}" --notes "Manual-only compatibility build. For the current automatic release, use the fixed-release workflow."
