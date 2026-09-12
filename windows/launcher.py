@@ -61,6 +61,7 @@ class WindowsBridge:
             return str(self.download_dir)
 
     def open_download_folder(self):
+        import os
         folder = Path(self.get_download_folder())
         folder.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":
@@ -97,6 +98,7 @@ def resource_root() -> Path:
 
 
 def prepare_runtime() -> Path:
+    import os
     root = resource_root()
     data_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
     data_root.mkdir(parents=True, exist_ok=True)
@@ -166,6 +168,7 @@ def check_for_update():
 
 
 def locate_browser():
+    import os
     candidates = [
         os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Google\Chrome\Application\chrome.exe",
         os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Google\Chrome\Application\chrome.exe",
