@@ -1,6 +1,5 @@
 name: Build Android and Windows releases
 
-# Rebuild after Windows WebView2 elevation/black-screen installer fix.
 on:
   workflow_dispatch:
   push:
@@ -62,7 +61,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Apply Windows app fixes
+      - name: Apply Windows app patches
         shell: pwsh
         run: |
           python tools/release_patch.py
@@ -70,6 +69,7 @@ jobs:
           python tools/ui_polish_patch.py
           python tools/persistence_gallery_patch.py
           python tools/fix_windows_runtime.py
+          python tools/final_browser_architecture.py
       - name: Set Windows version
         shell: pwsh
         run: |
@@ -85,22 +85,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r windows/requirements.txt
           choco install ffmpeg imagemagick innosetup -y --no-progress
-      - name: Download WebView2 Runtime bootstrapper
-        shell: pwsh
-        run: |
-          $url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
-          Invoke-WebRequest -Uri $url -OutFile windows/webview2bootstrapper.exe -UseBasicParsing
-          if (-not (Test-Path windows/webview2bootstrapper.exe)) { throw 'WebView2 bootstrapper download failed.' }
-          $size = (Get-Item windows/webview2bootstrapper.exe).Length
-          if ($size -lt 100000) { throw "WebView2 bootstrapper is unexpectedly small: $size bytes" }
-          Write-Host "WebView2 bootstrapper downloaded: $size bytes"
       - name: Generate ICO from project SVG
         shell: pwsh
         run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
       - name: Verify Windows sources
         shell: pwsh
         run: |
-          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss','windows/webview2bootstrapper.exe')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
+          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
@@ -136,4 +127,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Android release APK is signed and verified before publication. Windows includes persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, public image gallery support, and automatic WebView2 Runtime installation for reliable startup. Use only for public media you are authorized to download."
+          gh release create "v${APP_VERSION}" release/All-Video-Downloader.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "All Video Downloader Without Watermark v${APP_VERSION}" --notes "Android APK and Windows installer built automatically from the repository source. Android release APK is signed and verified before publication. Windows keeps the Flask downloader backend but uses the installed system browser in app mode instead of an embedded WebView2 renderer, removing the legacy-GPU WebView2 black-screen failure path. Use only for public media you are authorized to download."
