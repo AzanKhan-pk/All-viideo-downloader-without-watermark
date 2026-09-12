@@ -96,6 +96,13 @@ jobs:
           New-Item -ItemType Directory -Force windows/avd_browser | Out-Null
           Copy-Item (Join-Path $chromeDir.FullName '*') windows/avd_browser -Recurse -Force
           if (-not (Test-Path windows/avd_browser/chrome.exe)) { throw 'Bundled Chromium copy failed.' }
+          # Keep only the English locale. Chromium can run without the unused translation packs,
+          # which removes a large amount of duplicate language data from the installer.
+          $locales = Join-Path $chromeDir.FullName 'locales'
+          if (Test-Path $locales) {
+            Get-ChildItem $locales -File -Filter '*.pak' | Where-Object { $_.Name -ne 'en-US.pak' } | Remove-Item -Force
+            Get-ChildItem windows/avd_browser/locales -File -Filter '*.pak' | Where-Object { $_.Name -ne 'en-US.pak' } | Remove-Item -Force
+          }
           Set-Content windows/avd_browser/version.txt $revision -NoNewline
       - name: Set Windows version
         shell: pwsh
@@ -114,6 +121,7 @@ jobs:
         run: |
           foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
           if (-not (Test-Path windows/avd_browser/chrome.exe)) { throw 'Bundled Chromium app shell is missing.' }
+          if (-not (Test-Path windows/avd_browser/locales/en-US.pak)) { throw 'Chromium English locale is missing.' }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
@@ -133,6 +141,10 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
+          # Stronger LZMA2 compression; this changes packaging only, not app behavior.
+          $iss = Get-Content windows/setup.iss -Raw
+          $iss = $iss -replace 'Compression=lzma2', 'Compression=lzma2/ultra64'
+          Set-Content windows/setup.iss $iss -NoNewline
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
           if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
       - name: Publish isolated fixed release
@@ -140,4 +152,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Reliable mobile/background downloads, Android foreground progress notification, persistent restart/resume history, removable download cards, download location/open-folder controls, public image gallery with multi-select and separate image folders, TikTok-focused extraction reliability without forcing curl impersonation on Android, Pinterest media support through yt-dlp extractors, short-video focused format selection, and a bundled Chromium app shell on Windows so the desktop app does not depend on installed Chrome/Edge. The Windows shell uses software rendering flags for legacy-GPU compatibility. Supports public media only and does not bypass DRM, private access, or restricted content."
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Packaging-optimized build: unused Chromium locale packs removed and installer LZMA2 compression increased. Core app functionality is unchanged. Reliable mobile/background downloads, Android foreground progress notification, persistent restart/resume history, removable download cards, download location/open-folder controls, public image gallery with multi-select and separate image folders, TikTok-focused extraction reliability without forcing curl impersonation on Android, Pinterest media support through yt-dlp extractors, short-video focused format selection, and a bundled Chromium app shell on Windows so the desktop app does not depend on installed Chrome/Edge. The Windows shell uses software rendering flags for legacy-GPU compatibility. Supports public media only and does not bypass DRM, private access, or restricted content."
