@@ -36,11 +36,41 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        webView = WebView(this)
-        setContentView(webView)
-        configureWebView()
-        startPythonServer()
-        checkForUpdate()
+        try {
+            webView = WebView(this)
+            setContentView(webView)
+            configureWebView()
+            startPythonServer()
+            checkForUpdate()
+        } catch (e: Exception) {
+            Log.e("AVD", "Application startup failed", e)
+            showStartupError(e)
+        }
+    }
+
+    private fun showStartupError(error: Throwable) {
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("All Video Downloader")
+                .setMessage("The downloader could not start.\n\n${error.message ?: error.javaClass.simpleName}")
+                .setPositiveButton("Close") { _, _ -> finish() }
+                .setCancelable(false)
+                .show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Downloader startup failed", Toast.LENGTH_LONG).show()
+            finish()
+        }
+    }
+
+    private fun ensurePythonStarted(): Boolean {
+        return try {
+            if (!Python.isStarted()) Python.start(AndroidPlatform(this))
+            true
+        } catch (e: Exception) {
+            Log.e("AVD", "Python runtime failed to start", e)
+            runOnUiThread { showStartupError(e) }
+            false
+        }
     }
 
     private fun configureWebView() {
@@ -100,24 +130,25 @@ class MainActivity : Activity() {
     }
 
     private fun startPythonServer() {
-        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        val root = prepareOriginalProject()
+        if (!ensurePythonStarted()) return
         executor.execute {
             try {
+                val root = prepareOriginalProject()
                 Python.getInstance().getModule("embedded_server").callAttr("start", root.absolutePath, port)
             } catch (e: Exception) {
                 Log.e("AVD", "Python server failed", e)
-                runOnUiThread { Toast.makeText(this, "Downloader engine could not start", Toast.LENGTH_LONG).show() }
+                runOnUiThread { showStartupError(e) }
             }
         }
         executor.execute {
             repeat(80) {
                 try {
                     URL("http://127.0.0.1:$port/api/health").openConnection().apply { connectTimeout = 500; readTimeout = 500 }.getInputStream().close()
-                    runOnUiThread { webView.loadUrl("http://127.0.0.1:$port/") }
+                    runOnUiThread { if (::webView.isInitialized) webView.loadUrl("http://127.0.0.1:$port/") }
                     return@execute
                 } catch (_: Exception) { Thread.sleep(250) }
             }
+            runOnUiThread { showStartupError(IllegalStateException("The local downloader service did not become ready.")) }
         }
     }
 
@@ -188,12 +219,12 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onBackPressed() { if (webView.canGoBack()) webView.goBack() else super.onBackPressed() }
+    override fun onBackPressed() { if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed() }
 
     override fun onDestroy() {
         try { if (Python.isStarted()) Python.getInstance().getModule("embedded_server").callAttr("stop") } catch (_: Exception) {}
         executor.shutdownNow()
-        webView.destroy()
+        if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
 }
