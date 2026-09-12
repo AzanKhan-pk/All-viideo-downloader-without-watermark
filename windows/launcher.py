@@ -229,7 +229,10 @@ def main():
 
     if not ready:
         detail = str(server_error[0]) if server_error else "The local app server did not start."
-        messagebox.showerror(APP_NAME, "The app could not start its local service.\n\n" f"Details: {detail}")
+        messagebox.showerror(
+            APP_NAME,
+            "The app could not start its local service.\n\nDetails: " + detail,
+        )
         return
 
     url = f"http://127.0.0.1:{PORT}"
