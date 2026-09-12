@@ -15,6 +15,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -42,7 +43,7 @@ class MainActivity : Activity() {
             configureWebView()
             startPythonServer()
             checkForUpdate()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("AVD", "Application startup failed", e)
             showStartupError(e)
         }
@@ -50,13 +51,14 @@ class MainActivity : Activity() {
 
     private fun showStartupError(error: Throwable) {
         try {
-            AlertDialog.Builder(this)
-                .setTitle("All Video Downloader")
-                .setMessage("The downloader could not start.\n\n${error.message ?: error.javaClass.simpleName}")
-                .setPositiveButton("Close") { _, _ -> finish() }
-                .setCancelable(false)
-                .show()
-        } catch (_: Exception) {
+            val text = TextView(this).apply {
+                text = "All Video Downloader could not start.\n\n${error.javaClass.simpleName}: ${error.message ?: "Unknown startup error"}"
+                textSize = 16f
+                setPadding(48, 48, 48, 48)
+                isTextSelectable = true
+            }
+            setContentView(text)
+        } catch (_: Throwable) {
             Toast.makeText(this, "Downloader startup failed", Toast.LENGTH_LONG).show()
             finish()
         }
@@ -66,7 +68,7 @@ class MainActivity : Activity() {
         return try {
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("AVD", "Python runtime failed to start", e)
             runOnUiThread { showStartupError(e) }
             false
@@ -135,18 +137,23 @@ class MainActivity : Activity() {
             try {
                 val root = prepareOriginalProject()
                 Python.getInstance().getModule("embedded_server").callAttr("start", root.absolutePath, port)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("AVD", "Python server failed", e)
                 runOnUiThread { showStartupError(e) }
             }
         }
         executor.execute {
-            repeat(80) {
+            repeat(120) {
                 try {
-                    URL("http://127.0.0.1:$port/api/health").openConnection().apply { connectTimeout = 500; readTimeout = 500 }.getInputStream().close()
+                    URL("http://127.0.0.1:$port/api/health").openConnection().apply {
+                        connectTimeout = 500
+                        readTimeout = 500
+                    }.getInputStream().close()
                     runOnUiThread { if (::webView.isInitialized) webView.loadUrl("http://127.0.0.1:$port/") }
                     return@execute
-                } catch (_: Exception) { Thread.sleep(250) }
+                } catch (_: Throwable) {
+                    Thread.sleep(250)
+                }
             }
             runOnUiThread { showStartupError(IllegalStateException("The local downloader service did not become ready.")) }
         }
@@ -177,7 +184,7 @@ class MainActivity : Activity() {
                             .setPositiveButton("Update") { _, _ -> downloadUpdate(apkUrl!!) }.show()
                     }
                 }
-            } catch (_: Exception) { }
+            } catch (_: Throwable) { }
         }
     }
 
@@ -191,7 +198,7 @@ class MainActivity : Activity() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(installIntent)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("AVD", "APK installer launch failed", e)
             runOnUiThread { Toast.makeText(this, "Android could not open the APK installer: ${e.message}", Toast.LENGTH_LONG).show() }
         }
@@ -212,7 +219,7 @@ class MainActivity : Activity() {
                         launchApkInstaller(apk)
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("AVD", "Update download failed", e)
                 runOnUiThread { Toast.makeText(this, "Update download failed: ${e.message}", Toast.LENGTH_LONG).show() }
             }
@@ -222,7 +229,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() { if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed() }
 
     override fun onDestroy() {
-        try { if (Python.isStarted()) Python.getInstance().getModule("embedded_server").callAttr("stop") } catch (_: Exception) {}
+        try { if (Python.isStarted()) Python.getInstance().getModule("embedded_server").callAttr("stop") } catch (_: Throwable) {}
         executor.shutdownNow()
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
