@@ -6,7 +6,9 @@
         android:allowBackup="true"
         android:label="All Video Downloader Without Watermark"
         android:theme="@style/AppTheme"
-        android:icon="@drawable/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="false">
         <activity android:name=".MainActivity" android:screenOrientation="unspecified" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
