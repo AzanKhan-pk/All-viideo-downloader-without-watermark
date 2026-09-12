@@ -26,6 +26,7 @@ jobs:
           python tools/ui_polish_patch.py
           python tools/persistence_gallery_patch.py
           python tools/fix_windows_runtime.py
+          python tools/final_browser_architecture.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -73,22 +74,13 @@ jobs:
           $iss = Get-Content windows/setup.iss -Raw
           $iss = [regex]::Replace($iss, '#define MyAppVersion "[^"]*"', '#define MyAppVersion "1.0.${{ github.run_number }}"')
           Set-Content windows/setup.iss $iss -NoNewline
-      - name: Download WebView2 Runtime bootstrapper
-        shell: pwsh
-        run: |
-          $url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
-          Invoke-WebRequest -Uri $url -OutFile windows/webview2bootstrapper.exe -UseBasicParsing
-          if (-not (Test-Path windows/webview2bootstrapper.exe)) { throw 'WebView2 bootstrapper download failed.' }
-          $size = (Get-Item windows/webview2bootstrapper.exe).Length
-          if ($size -lt 100000) { throw "WebView2 bootstrapper is unexpectedly small: $size bytes" }
-          Write-Host "WebView2 bootstrapper downloaded: $size bytes"
       - name: Generate ICO
         shell: pwsh
         run: magick static/icon.svg -background none -define icon:auto-resize=256,128,64,48,32,16 windows/app.ico
       - name: Verify Windows sources
         shell: pwsh
         run: |
-          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss','windows/webview2bootstrapper.exe')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
+          foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
@@ -108,4 +100,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Persistent background downloads, restart/resume progress, in-page Browse/Open folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, public image gallery with multi-select and separate image folders. Windows startup and WebView2 blank-screen protection fixed; uninstall now stops the background process and removes the installed files. Supports public media only and does not bypass DRM, private access, or restricted content."
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, public image gallery with multi-select and separate image folders. Windows now uses the installed system browser in app mode instead of embedded WebView2, removing the WebView2 black-screen rendering path. Supports public media only and does not bypass DRM, private access, or restricted content."
