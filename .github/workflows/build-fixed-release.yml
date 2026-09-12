@@ -29,7 +29,6 @@ jobs:
           python tools/ui_polish_patch.py
           python tools/persistence_gallery_patch.py
           python tools/fix_windows_runtime.py
-          python tools/final_browser_architecture.py
           python tools/final_download_reliability_patch.py
       - name: Validate generated Windows launcher
         shell: pwsh
@@ -107,8 +106,8 @@ jobs:
         shell: pwsh
         run: |
           # Chromium is intentionally not placed in the installer. The launcher downloads
-          # and caches the required English-only Chromium build on first run, keeping the
-          # installer close to the previous app size while retaining an independent shell.
+          # and caches the required English-only Chromium shell on first run, keeping the
+          # installer small while retaining an independent desktop shell.
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
           if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
       - name: Publish isolated fixed release
