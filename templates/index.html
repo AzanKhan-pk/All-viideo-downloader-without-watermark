@@ -3,6 +3,7 @@
 <style>
 .special-media-box{max-width:920px;margin:10px auto 55px;padding:24px 22px;border:1px solid rgba(124,58,237,.25);border-radius:22px;background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(250,204,21,.035));box-shadow:0 25px 70px rgba(0,0,0,.24)}
 .special-media-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:15px}.special-media-head h2{font-size:22px}.special-media-head p{margin-top:6px;color:#9292a3;font-size:12px;line-height:1.6}.special-focus{padding:6px 10px;border-radius:999px;background:rgba(250,204,21,.09);border:1px solid rgba(250,204,21,.25);color:#facc15;font-size:10px;font-weight:900;white-space:nowrap}.special-row{display:flex;gap:9px}.special-row input{flex:1;min-width:0;height:52px;padding:0 15px;border:1px solid rgba(255,255,255,.10);border-radius:13px;background:#08080d;color:white;outline:none}.special-row input:focus{border-color:#7c3aed;box-shadow:0 0 0 4px rgba(124,58,237,.10)}.special-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.special-btn{min-height:42px;padding:0 15px;border-radius:11px;border:1px solid rgba(255,255,255,.10);background:#10101a;color:#ddd;cursor:pointer;font-size:12px;font-weight:850}.special-btn.primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}.special-btn.image{border-color:rgba(250,204,21,.28);color:#facc15}.special-btn:disabled{opacity:.55;cursor:not-allowed}.special-status{min-height:24px;margin-top:13px;color:#9d9dad;font-size:12px;line-height:1.6}.special-result{display:none;margin-top:12px;padding:13px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.special-result.show{display:block}.special-result a{display:inline-flex;margin-top:8px;padding:9px 12px;border-radius:9px;background:rgba(250,204,21,.10);border:1px solid rgba(250,204,21,.25);color:#facc15;text-decoration:none;font-size:11px;font-weight:850}
+#appContextMenu{position:fixed;z-index:2147483647;display:none;min-width:180px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:#111118;box-shadow:0 18px 55px rgba(0,0,0,.45);font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;color:#eee}.app-menu-item{display:block;width:100%;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}.app-menu-item:hover{background:rgba(124,58,237,.24)}.app-menu-sep{height:1px;margin:5px 4px;background:rgba(255,255,255,.08)}
 @media(max-width:760px){.special-media-box{margin-left:16px;margin-right:16px;padding:18px 14px}.special-media-head{flex-direction:column}.special-row{flex-direction:column}.special-row input{width:100%}.special-btn{flex:1}}
 </style>
 
@@ -10,7 +11,7 @@
   <div class="special-media-head">
     <div>
       <h2>⚡ TikTok & Pinterest Media</h2>
-      <p>TikTok-focused video handling with audio merge, plus image downloading for TikTok and Pinterest public posts. Pinterest MP4 downloads use a video+audio selector when both streams are available.</p>
+      <p>TikTok-focused video handling with audio merge, plus picture downloading for TikTok and Pinterest public posts.</p>
     </div>
     <span class="special-focus">TIKTOK FOCUS</span>
   </div>
@@ -25,21 +26,71 @@
   <div class="special-result" id="specialResult"></div>
 </section>
 
+<div id="appContextMenu" role="menu" aria-hidden="true">
+  <button class="app-menu-item" data-edit="cut">✂ Cut</button>
+  <button class="app-menu-item" data-edit="copy">📋 Copy</button>
+  <button class="app-menu-item" data-edit="paste">📥 Paste</button>
+  <div class="app-menu-sep"></div>
+  <button class="app-menu-item" data-edit="selectall">▣ Select all</button>
+</div>
+
 <script>
 (() => {
   const input = document.getElementById('specialUrl');
   const status = document.getElementById('specialStatus');
   const result = document.getElementById('specialResult');
   const buttons = [...document.querySelectorAll('[data-special-kind]')];
+  const menu = document.getElementById('appContextMenu');
   if (!input || !status || !result || !buttons.length) return;
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const domainOK = (url) => {
     try {
       const host = new URL(url).hostname.toLowerCase();
-      return host.includes('tiktok.com') || host.includes('pinterest.');
+      return host === 'tiktok.com' || host.endsWith('.tiktok.com') || host === 'pinterest.com' || host.endsWith('.pinterest.com') || host.endsWith('.pinterest.co.uk') || host.endsWith('.pinterest.de') || host.endsWith('.pinterest.fr');
     } catch (_) { return false; }
   };
+
+  async function clipboardWrite(text) {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
+    const area = document.createElement('textarea'); area.value = text; document.body.appendChild(area); area.select(); const ok = document.execCommand('copy'); area.remove(); return ok;
+  }
+  async function clipboardRead() {
+    if (navigator.clipboard?.readText) return await navigator.clipboard.readText();
+    return '';
+  }
+  function hideMenu() { menu.style.display = 'none'; menu.setAttribute('aria-hidden','true'); }
+  function showMenu(x, y) {
+    menu.style.display = 'block'; menu.setAttribute('aria-hidden','false');
+    const r = menu.getBoundingClientRect(); menu.style.left = Math.min(x, innerWidth-r.width-8)+'px'; menu.style.top = Math.min(y, innerHeight-r.height-8)+'px';
+  }
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target.closest('input, textarea, [contenteditable="true"]');
+    if (!target) return;
+    event.preventDefault();
+    target.focus();
+    showMenu(event.clientX, event.clientY);
+  }, true);
+  document.addEventListener('click', hideMenu);
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+      if (document.activeElement.matches('input, textarea, [contenteditable="true"]')) return;
+    }
+    if (event.key === 'Escape') hideMenu();
+  });
+  menu.addEventListener('click', async (event) => {
+    const action = event.target.closest('[data-edit]')?.dataset.edit;
+    if (!action) return;
+    event.stopPropagation();
+    input.focus();
+    try {
+      if (action === 'copy') await clipboardWrite(input.value.substring(input.selectionStart, input.selectionEnd) || input.value);
+      if (action === 'cut') { await clipboardWrite(input.value.substring(input.selectionStart, input.selectionEnd) || input.value); document.execCommand('cut'); }
+      if (action === 'paste') { const text = await clipboardRead(); if (text) { const a=input.selectionStart,b=input.selectionEnd; input.setRangeText(text,a,b,'end'); input.dispatchEvent(new Event('input',{bubbles:true})); } }
+      if (action === 'selectall') input.select();
+    } catch (_) { status.textContent = 'Clipboard access was blocked. Use Ctrl+C / Ctrl+V in the app window.'; }
+    hideMenu();
+  });
 
   async function runSpecial(kind) {
     const url = input.value.trim();
@@ -47,44 +98,30 @@
     if (!domainOK(url)) { status.textContent = 'Please use a TikTok or Pinterest URL for this focused tool.'; return; }
 
     buttons.forEach(b => b.disabled = true);
-    result.classList.remove('show');
-    result.innerHTML = '';
-    status.textContent = kind === 'image' ? 'Finding the best available picture…' : 'Preparing video and audio…';
+    result.classList.remove('show'); result.innerHTML = '';
+    status.textContent = kind === 'image' ? 'Finding the best available picture…' : 'Downloading video + audio…';
 
     try {
-      const response = await fetch('/api/special-download', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({url, kind, quality: 2160})
-      });
+      const response = await fetch('/api/special-download', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url,kind,quality:2160}) });
       const data = await response.json();
       if (!response.ok || !data.job_id) throw new Error(data.error || 'Could not start the download.');
-
       let finished = false;
-      for (let i = 0; i < 600; i++) {
-        await new Promise(r => setTimeout(r, 500));
-        const poll = await fetch('/api/download/' + encodeURIComponent(data.job_id), {cache:'no-store'});
+      for (let i=0; i<900; i++) {
+        await new Promise(r=>setTimeout(r,500));
+        const poll = await fetch('/api/download/'+encodeURIComponent(data.job_id), {cache:'no-store'});
         const job = await poll.json();
-        const pct = Math.round(Number(job.percentage || 0));
-        status.textContent = `${job.status || 'processing'}${pct ? ` — ${pct}%` : ''}`;
-
+        const pct = Math.round(Number(job.percentage||0));
+        status.textContent = `${job.status||'processing'}${pct ? ` — ${pct}%` : ''}`;
         if (job.status === 'completed' && job.download_url) {
           finished = true;
-          result.innerHTML = `<div><strong>${esc(job.title || (kind === 'image' ? 'Picture' : 'Video'))}</strong></div><a href="${esc(job.download_url)}" download>⬇ Open / Save ${kind === 'image' ? 'Picture' : 'Video'}</a>`;
-          result.classList.add('show');
-          status.textContent = 'Done — your media is ready.';
-          break;
+          result.innerHTML = `<div><strong>${esc(job.title || (kind==='image'?'Picture':'Video'))}</strong><br><small>${esc(job.filesize_text || '')}</small></div><a href="${esc(job.download_url)}" download>⬇ Save ${kind==='image'?'Picture':'Video'}</a>`;
+          result.classList.add('show'); status.textContent = 'Done — your media is ready.'; break;
         }
-        if (job.status === 'error' || job.status === 'cancelled') {
-          throw new Error(job.error || 'Download failed.');
-        }
+        if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error || 'Download failed.');
       }
       if (!finished) throw new Error('The download is taking too long. Please try again.');
-    } catch (error) {
-      status.textContent = error?.message || 'Download failed.';
-    } finally {
-      buttons.forEach(b => b.disabled = false);
-    }
+    } catch (error) { status.textContent = error?.message || 'Download failed.'; }
+    finally { buttons.forEach(b=>b.disabled=false); }
   }
 
   buttons.forEach(button => button.addEventListener('click', () => runSpecial(button.dataset.specialKind)));
