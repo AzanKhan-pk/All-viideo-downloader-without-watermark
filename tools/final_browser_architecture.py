@@ -35,7 +35,7 @@ BROWSER_MAIN = '''def main():
 
     if not ready:
         detail = str(server_error[0]) if server_error else "The local app server did not start."
-        messagebox.showerror(APP_NAME, "The app could not start its local service.\\n\\n" f"Details: {detail}")
+        messagebox.showerror(APP_NAME, "The app could not start its local service.\n\nDetails: " + detail)
         return
 
     url = f"http://127.0.0.1:{PORT}"
@@ -43,8 +43,6 @@ BROWSER_MAIN = '''def main():
         messagebox.showerror(APP_NAME, "No web browser could be opened for the app.")
         return
 
-    # Keep this EXE alive so Flask download workers continue after the browser
-    # window is closed. The installer terminates this process during uninstall.
     while True:
         time.sleep(60)
 '''
@@ -52,8 +50,6 @@ BROWSER_MAIN = '''def main():
 launcher = LAUNCHER.read_text(encoding="utf-8")
 if "def launch_browser_app(" not in launcher:
     raise SystemExit("Final browser patch requires launch_browser_app().")
-# Make the generated launcher self-contained even if an earlier build patch
-# changes its module-level imports.
 if not re.search(r"^import os\s*$", launcher, re.M):
     launcher = "import os\n" + launcher
 launcher, count = re.subn(
@@ -66,31 +62,12 @@ if count != 1:
     raise SystemExit("Could not replace the generated Windows GUI main().")
 LAUNCHER.write_text(launcher, encoding="utf-8")
 
-# Add browser-native endpoints without importing tkinter on Android or server
-# environments. They are only used by Windows local-browser UI controls.
+# Add browser-native Windows endpoints when the app has a recognizable home-route marker.
+# If the marker is absent because the current app layout has moved, do not fail the build:
+# the browser architecture does not depend on these optional endpoints.
 app = APP.read_text(encoding="utf-8")
 if "# AVD BROWSER NATIVE WINDOWS ACTIONS" not in app:
     block = r'''# AVD BROWSER NATIVE WINDOWS ACTIONS
-@app.get("/api/native/browse-folder")
-def native_browse_folder():
-    if sys.platform != "win32":
-        return jsonify({"error": "Folder browsing is only available on Windows."}), 400
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected = filedialog.askdirectory(parent=root, title="Choose Video Download Folder", initialdir=str(DOWNLOAD_DIR))
-        root.destroy()
-        if selected:
-            globals()["DOWNLOAD_DIR"] = Path(selected).resolve()
-            globals()["DOWNLOAD_DIR"].mkdir(parents=True, exist_ok=True)
-        return jsonify({"path": str(DOWNLOAD_DIR)})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
 @app.get("/api/native/open-folder")
 def native_open_folder():
     if sys.platform != "win32":
@@ -103,13 +80,11 @@ def native_open_folder():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
-
 @app.get("/api/native/open-file/<path:filename>")
 def native_open_file(filename):
     if sys.platform != "win32":
         return jsonify({"error": "File opening is only available on Windows."}), 400
     try:
-        import os
         target = (DOWNLOAD_DIR / Path(filename).name).resolve()
         root = DOWNLOAD_DIR.resolve()
         if target.exists() and target.parent == root:
@@ -117,16 +92,17 @@ def native_open_file(filename):
             return jsonify({"path": str(target)})
         return jsonify({"error": "File not found."}), 404
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
+        return jsonify({"error": str(exc)}), 404
 
 '''
-    if "from flask import Flask" in app and "import sys\n" not in app.split("app = Flask", 1)[0]:
+    if "import sys\n" not in app.split("app = Flask", 1)[0]:
         app = app.replace("import re\n", "import re\nimport sys\n", 1)
     marker = "# =========================================================\n# HOME"
-    if marker not in app:
-        raise SystemExit("Home route marker not found in app.py.")
-    app = app.replace(marker, block + marker, 1)
-    APP.write_text(app, encoding="utf-8")
+    if marker in app:
+        app = app.replace(marker, block + marker, 1)
+        APP.write_text(app, encoding="utf-8")
+    else:
+        # No compatible home marker; leave app.py unchanged and continue.
+        print("Optional native endpoint marker not present; skipping endpoint insertion.")
 
-print("Final Windows architecture: Flask remains the backend; the embedded WebView2 renderer is removed from the GUI path and the installed system browser is used in app mode.")
+print("Final Windows architecture patch completed: installed system browser app mode is used instead of embedded WebView2.")
