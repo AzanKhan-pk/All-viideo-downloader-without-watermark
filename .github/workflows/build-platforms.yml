@@ -1,5 +1,6 @@
 name: Build Android and Windows releases
 
+# Rebuild after Windows WebView2 elevation/black-screen installer fix.
 on:
   workflow_dispatch:
   push:
