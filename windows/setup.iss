@@ -8,7 +8,7 @@ AppId={{8F5E6D74-5F93-4C44-8A31-5E1E0E8A5C3A}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\All Video Downloader Without Watermark
+DefaultDirName={localappdata}\Programs\All Video Downloader Without Watermark
 DefaultGroupName={#MyAppName}
 OutputDir=..\release
 OutputBaseFilename=All-Video-Downloader-Setup
@@ -16,7 +16,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 CloseApplications=yes
@@ -33,7 +33,7 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM {#MyAppExeName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopDownloaderBeforeUninstall"
