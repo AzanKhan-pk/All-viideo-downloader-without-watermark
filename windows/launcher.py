@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+import zipfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -16,6 +17,7 @@ APP_NAME = "All Video Downloader Without Watermark"
 APP_VERSION = "1.0.64"
 PORT = None
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
+CHROMIUM_SNAPSHOT_BASE = "https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64"
 
 
 class WindowsBridge:
@@ -164,11 +166,8 @@ def check_for_update():
         pass
 
 
-def locate_bundled_browser():
-    # In a PyInstaller one-file build, _MEIPASS is a temporary extraction folder.
-    # The separately bundled Chromium folder is installed beside the real EXE,
-    # so check both locations. This fixes the "browser is missing" false error.
-    roots = [resource_root()]
+def _browser_locations(data_root):
+    roots = [resource_root(), Path(data_root)]
     try:
         roots.append(Path(sys.executable).resolve().parent)
     except Exception:
@@ -186,17 +185,100 @@ def locate_bundled_browser():
         for candidate in (
             root / "avd_browser" / "chrome.exe",
             root / "avd_browser" / "chrome-win" / "chrome.exe",
+            root / "Chromium" / "chrome.exe",
+            root / "Chromium" / "chrome-win" / "chrome.exe",
         ):
-            if candidate.is_file():
-                return candidate
+            yield candidate
+
+
+def locate_bundled_browser(data_root):
+    for candidate in _browser_locations(data_root):
+        if candidate.is_file():
+            return candidate
     return None
 
 
+def _show_browser_setup(text):
+    root = tk.Tk()
+    root.title(APP_NAME)
+    root.geometry("470x150")
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
+    root.configure(bg="#09090f")
+    label = tk.Label(root, text=text, bg="#09090f", fg="white", font=("Segoe UI", 11), wraplength=410, justify="center")
+    label.pack(expand=True, fill="both", padx=24, pady=22)
+    root.update_idletasks()
+    return root, label
+
+
+def ensure_bundled_browser(data_root):
+    browser = locate_bundled_browser(data_root)
+    if browser:
+        return browser
+
+    target_root = Path(data_root) / "Chromium"
+    target_root.mkdir(parents=True, exist_ok=True)
+    zip_path = Path(tempfile.gettempdir()) / "avd-chromium.zip"
+    extract_root = Path(tempfile.gettempdir()) / "avd-chromium-extract"
+    root, label = _show_browser_setup("Preparing the desktop app browser...\nThis is a one-time setup.")
+    try:
+        revision_url = CHROMIUM_SNAPSHOT_BASE + "/LAST_CHANGE"
+        request = urllib.request.Request(revision_url, headers={"User-Agent": APP_NAME})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            revision = response.read().decode("utf-8", "ignore").strip()
+        if not revision.isdigit():
+            raise RuntimeError("Could not determine the browser version.")
+
+        url = f"{CHROMIUM_SNAPSHOT_BASE}/{revision}/chrome-win.zip"
+        label.config(text="Downloading the desktop browser...\nPlease wait; this happens only once.")
+        root.update()
+        request = urllib.request.Request(url, headers={"User-Agent": APP_NAME})
+        with urllib.request.urlopen(request, timeout=60) as response, open(zip_path, "wb") as output:
+            total = int(response.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+                done += len(chunk)
+                if total:
+                    label.config(text=f"Downloading the desktop browser...\n{done * 100 // total}%")
+                    root.update()
+
+        if extract_root.exists():
+            shutil.rmtree(extract_root, ignore_errors=True)
+        extract_root.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(extract_root)
+        chrome = next((p for p in extract_root.rglob("chrome.exe") if p.is_file()), None)
+        if not chrome:
+            raise RuntimeError("The desktop browser package is incomplete.")
+
+        if target_root.exists():
+            shutil.rmtree(target_root, ignore_errors=True)
+        shutil.copytree(chrome.parent, target_root)
+        locales = target_root / "locales"
+        if locales.exists():
+            for pak in locales.glob("*.pak"):
+                if pak.name != "en-US.pak":
+                    pak.unlink(missing_ok=True)
+        (target_root / "version.txt").write_text(revision, encoding="utf-8")
+        return target_root / "chrome.exe"
+    finally:
+        root.destroy()
+        try:
+            zip_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        shutil.rmtree(extract_root, ignore_errors=True)
+
+
 def launch_browser_app(url, data_root):
-    browser = locate_bundled_browser()
+    browser = ensure_bundled_browser(data_root)
     if not browser:
-        raise FileNotFoundError("Bundled app browser is missing from this Windows release.")
-    profile = data_root / "BrowserProfile"
+        raise FileNotFoundError("The desktop app browser could not be prepared.")
+    profile = Path(data_root) / "BrowserProfile"
     profile.mkdir(parents=True, exist_ok=True)
     subprocess.Popen([
         str(browser),
@@ -208,7 +290,9 @@ def launch_browser_app(url, data_root):
         "--disable-gpu",
         "--disable-gpu-compositing",
         "--disable-gpu-vsync",
-        "--disable-features=UseSkiaRenderer",
+        "--disable-features=UseSkiaRenderer,CalculateNativeWinOcclusion",
+        "--force-device-scale-factor=1",
+        "--window-size=1280,820",
     ], cwd=str(browser.parent), close_fds=True)
     return True
 
@@ -251,7 +335,7 @@ def main():
     try:
         launch_browser_app(url, data_root)
     except Exception as exc:
-        messagebox.showerror(APP_NAME, "The bundled app browser could not start.\n\nDetails: " + str(exc))
+        messagebox.showerror(APP_NAME, "The desktop app browser could not start.\n\nDetails: " + str(exc))
         return
 
     while True:
