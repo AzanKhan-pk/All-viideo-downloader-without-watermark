@@ -14,6 +14,7 @@ else:
 launcher = root / "windows" / "launcher.py"
 hiddenimports = [m for m in collect_submodules("webview") if ".platforms.android" not in m]
 
+
 a = Analysis(
     [str(launcher)],
     pathex=[str(root), str(root / "windows")],
@@ -26,7 +27,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(root / "windows" / "webview2_runtime_hook.py")],
     excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3"],
     noarchive=False,
 )
