@@ -141,10 +141,7 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          # Stronger LZMA2 compression; this changes packaging only, not app behavior.
-          $iss = Get-Content windows/setup.iss -Raw
-          $iss = $iss -replace 'Compression=lzma2', 'Compression=lzma2/ultra64'
-          Set-Content windows/setup.iss $iss -NoNewline
+          # Use the compression setting committed in windows/setup.iss; do not override it here.
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
           if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
       - name: Publish isolated fixed release
