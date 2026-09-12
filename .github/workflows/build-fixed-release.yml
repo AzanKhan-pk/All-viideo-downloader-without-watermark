@@ -78,32 +78,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r windows/requirements.txt
           choco install ffmpeg imagemagick innosetup -y --no-progress
-      - name: Download bundled Chromium app shell
-        shell: pwsh
-        run: |
-          $revision = (Invoke-WebRequest -UseBasicParsing 'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE').Content.Trim()
-          if (-not $revision) { throw 'Chromium snapshot revision was empty.' }
-          $zip = Join-Path $env:RUNNER_TEMP "chromium-$revision.zip"
-          $url = "https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/$revision/chrome-win.zip"
-          Write-Host "Downloading Chromium snapshot $revision"
-          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
-          $extract = Join-Path $env:RUNNER_TEMP "chromium-$revision"
-          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
-          Expand-Archive -Path $zip -DestinationPath $extract -Force
-          $chromeDir = Get-ChildItem $extract -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'chrome.exe') } | Select-Object -First 1
-          if (-not $chromeDir) { throw 'Bundled Chromium chrome.exe was not found.' }
-          if (Test-Path windows/avd_browser) { Remove-Item windows/avd_browser -Recurse -Force }
-          New-Item -ItemType Directory -Force windows/avd_browser | Out-Null
-          Copy-Item (Join-Path $chromeDir.FullName '*') windows/avd_browser -Recurse -Force
-          if (-not (Test-Path windows/avd_browser/chrome.exe)) { throw 'Bundled Chromium copy failed.' }
-          # Keep only the English locale. Chromium can run without the unused translation packs,
-          # which removes a large amount of duplicate language data from the installer.
-          $locales = Join-Path $chromeDir.FullName 'locales'
-          if (Test-Path $locales) {
-            Get-ChildItem $locales -File -Filter '*.pak' | Where-Object { $_.Name -ne 'en-US.pak' } | Remove-Item -Force
-            Get-ChildItem windows/avd_browser/locales -File -Filter '*.pak' | Where-Object { $_.Name -ne 'en-US.pak' } | Remove-Item -Force
-          }
-          Set-Content windows/avd_browser/version.txt $revision -NoNewline
       - name: Set Windows version
         shell: pwsh
         run: |
@@ -120,18 +94,9 @@ jobs:
         shell: pwsh
         run: |
           foreach ($f in @('windows/launcher.py','windows/app.spec','windows/setup.iss')) { if (-not (Test-Path $f)) { throw "$f is missing from checkout." } }
-          if (-not (Test-Path windows/avd_browser/chrome.exe)) { throw 'Bundled Chromium app shell is missing.' }
-          if (-not (Test-Path windows/avd_browser/locales/en-US.pak)) { throw 'Chromium English locale is missing.' }
       - name: Build Windows application
         shell: pwsh
         run: pyinstaller --noconfirm --clean windows/app.spec
-      - name: Bundle Chromium app shell into Windows build
-        shell: pwsh
-        run: |
-          if (Test-Path dist/All-Video-Downloader/avd_browser) { Remove-Item dist/All-Video-Downloader/avd_browser -Recurse -Force }
-          New-Item -ItemType Directory -Force dist/All-Video-Downloader/avd_browser | Out-Null
-          Copy-Item windows/avd_browser/* dist/All-Video-Downloader/avd_browser -Recurse -Force
-          if (-not (Test-Path dist/All-Video-Downloader/avd_browser/chrome.exe)) { throw 'Chromium app shell was not bundled into dist.' }
       - name: Bundle FFmpeg
         shell: pwsh
         run: |
@@ -141,7 +106,9 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          # Use the compression setting committed in windows/setup.iss; do not override it here.
+          # Chromium is intentionally not placed in the installer. The launcher downloads
+          # and caches the required English-only Chromium build on first run, keeping the
+          # installer close to the previous app size while retaining an independent shell.
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' (Resolve-Path windows/setup.iss)
           if (-not (Test-Path release/All-Video-Downloader-Setup.exe)) { throw 'Windows installer was not produced.' }
       - name: Publish isolated fixed release
@@ -149,4 +116,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Packaging-optimized build: unused Chromium locale packs removed and installer LZMA2 compression increased. Core app functionality is unchanged. Reliable mobile/background downloads, Android foreground progress notification, persistent restart/resume history, removable download cards, download location/open-folder controls, public image gallery with multi-select and separate image folders, TikTok-focused extraction reliability without forcing curl impersonation on Android, Pinterest media support through yt-dlp extractors, short-video focused format selection, and a bundled Chromium app shell on Windows so the desktop app does not depend on installed Chrome/Edge. The Windows shell uses software rendering flags for legacy-GPU compatibility. Supports public media only and does not bypass DRM, private access, or restricted content."
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Packaging-optimized build: the Windows installer no longer embeds the large Chromium runtime. The launcher downloads and caches the required English-only Chromium shell once on first run, keeping the installer small while remaining independent of the user's installed Chrome/Edge. The Windows shell uses safer software-rendering flags for legacy-GPU compatibility. Core downloader functionality is unchanged. Reliable mobile/background downloads, Android foreground progress notification, persistent restart/resume history, removable download cards, download location/open-folder controls, public image gallery with multi-select and separate image folders, TikTok-focused extraction reliability without forcing curl impersonation on Android, Pinterest media support through yt-dlp extractors, and short-video focused format selection. Supports public media only and does not bypass DRM, private access, or restricted content."
