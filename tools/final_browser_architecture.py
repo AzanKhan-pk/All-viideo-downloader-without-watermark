@@ -39,19 +39,54 @@ BROWSER_MAIN = r'''def main():
         return
 
     url = f"http://127.0.0.1:{PORT}"
-    if not launch_browser_app(url, data_root):
-        messagebox.showerror(APP_NAME, "No web browser could be opened for the app.")
+    try:
+        browser = locate_bundled_browser()
+        if not browser:
+            raise FileNotFoundError("Bundled app browser is missing from this Windows release.")
+        profile = data_root / "BrowserProfile"
+        profile.mkdir(parents=True, exist_ok=True)
+        subprocess.Popen([
+            str(browser),
+            f"--app={url}",
+            "--new-window",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-gpu",
+            "--disable-gpu-compositing",
+            "--disable-gpu-vsync",
+            "--disable-features=UseSkiaRenderer",
+        ], cwd=str(browser.parent), close_fds=True)
+    except Exception as exc:
+        messagebox.showerror(APP_NAME, "The bundled app browser could not start.\n\nDetails: " + str(exc))
         return
 
+    # Keep Flask alive after the UI window closes so active downloads continue.
     while True:
         time.sleep(60)
 '''
 
 launcher = LAUNCHER.read_text(encoding="utf-8")
-if "def launch_browser_app(" not in launcher:
-    raise SystemExit("Final browser patch requires launch_browser_app().")
+if "def main(" not in launcher:
+    raise SystemExit("Final browser patch requires a Windows launcher main().")
 if not re.search(r"^import os\s*$", launcher, re.M):
     launcher = "import os\n" + launcher
+if "def locate_bundled_browser(" not in launcher:
+    browser_helpers = r'''
+
+def locate_bundled_browser():
+    root = resource_root()
+    candidates = [
+        root / "avd_browser" / "chrome.exe",
+        root / "avd_browser" / "chrome-win" / "chrome.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+'''
+    marker = "\ndef launch_browser_app(" if "def launch_browser_app(" in launcher else "\ndef main("
+    launcher = launcher.replace(marker, browser_helpers + marker, 1)
 launcher, count = re.subn(
     r'def main\(\):[\s\S]*?\n\nif __name__ == "__main__":\n    main\(\)',
     lambda _match: BROWSER_MAIN + '\n\nif __name__ == "__main__":\n    main()',
@@ -63,8 +98,6 @@ if count != 1:
 LAUNCHER.write_text(launcher, encoding="utf-8")
 
 # Add browser-native Windows endpoints when the app has a recognizable home-route marker.
-# If the marker is absent because the current app layout has moved, do not fail the build:
-# the browser architecture does not depend on these optional endpoints.
 app = APP.read_text(encoding="utf-8")
 if "# AVD BROWSER NATIVE WINDOWS ACTIONS" not in app:
     block = r'''# AVD BROWSER NATIVE WINDOWS ACTIONS
@@ -104,4 +137,4 @@ def native_open_file(filename):
     else:
         print("Optional native endpoint marker not present; skipping endpoint insertion.")
 
-print("Final Windows architecture patch completed: installed system browser app mode is used instead of embedded WebView2.")
+print("Final Windows architecture patch completed: bundled Chromium app shell is used without requiring an installed Chrome/Edge browser.")
