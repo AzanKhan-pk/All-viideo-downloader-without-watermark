@@ -1,8 +1,10 @@
 package pk.azankhan.alldownloader
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,9 +20,9 @@ import android.webkit.WebViewClient
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,7 +43,9 @@ class MainActivity : Activity() {
             webView = WebView(this)
             setContentView(webView)
             configureWebView()
-            startPythonServer()
+            requestNotificationPermissionIfNeeded()
+            startDownloadService()
+            waitForLocalServer()
             checkForUpdate()
         } catch (e: Throwable) {
             Log.e("AVD", "Application startup failed", e)
@@ -64,17 +68,29 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun ensurePythonStarted(): Boolean {
-        return try {
-            if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-            true
-        } catch (e: Throwable) {
-            Log.e("AVD", "Python runtime failed to start", e)
-            runOnUiThread { showStartupError(e) }
-            false
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4103)
         }
     }
 
+    private fun startDownloadService() {
+        val intent = Intent(this, DownloadService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Throwable) {
+            Log.e("AVD", "Could not start download service", e)
+            showStartupError(e)
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
@@ -113,47 +129,23 @@ class MainActivity : Activity() {
         webView.evaluateJavascript(js, null)
     }
 
-    private fun copyAssetTree(assetPath: String, target: File) {
-        val children = assets.list(assetPath) ?: emptyArray()
-        if (children.isEmpty()) {
-            target.parentFile?.mkdirs()
-            assets.open(assetPath).use { input -> target.outputStream().use { input.copyTo(it) } }
-            return
-        }
-        target.mkdirs()
-        for (child in children) copyAssetTree("$assetPath/$child", File(target, child))
-    }
-
-    private fun prepareOriginalProject(): File {
-        val root = File(filesDir, "avd_runtime")
-        root.mkdirs()
-        copyAssetTree("original", root)
-        return root
-    }
-
-    private fun startPythonServer() {
-        if (!ensurePythonStarted()) return
+    private fun waitForLocalServer() {
         executor.execute {
-            try {
-                val root = prepareOriginalProject()
-                Python.getInstance().getModule("embedded_server").callAttr("start", root.absolutePath, port)
-            } catch (e: Throwable) {
-                Log.e("AVD", "Python server failed", e)
-                runOnUiThread { showStartupError(e) }
-            }
-        }
-        executor.execute {
-            repeat(120) {
+            repeat(160) {
                 try {
-                    URL("http://127.0.0.1:$port/api/health").openConnection().apply {
-                        connectTimeout = 500
-                        readTimeout = 500
-                    }.getInputStream().close()
-                    runOnUiThread { if (::webView.isInitialized) webView.loadUrl("http://127.0.0.1:$port/") }
-                    return@execute
+                    val connection = URL("http://127.0.0.1:$port/api/health").openConnection() as HttpURLConnection
+                    connection.connectTimeout = 500
+                    connection.readTimeout = 500
+                    val ok = connection.responseCode in 200..499
+                    connection.disconnect()
+                    if (ok) {
+                        runOnUiThread { if (::webView.isInitialized) webView.loadUrl("http://127.0.0.1:$port/") }
+                        return@execute
+                    }
                 } catch (_: Throwable) {
-                    Thread.sleep(250)
+                    // Service may still be starting.
                 }
+                Thread.sleep(250)
             }
             runOnUiThread { showStartupError(IllegalStateException("The local downloader service did not become ready.")) }
         }
@@ -169,6 +161,7 @@ class MainActivity : Activity() {
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 val release = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                conn.disconnect()
                 val latest = release.optString("tag_name")
                 val assets = release.optJSONArray("assets") ?: return@execute
                 var apkUrl: String? = null
@@ -226,10 +219,13 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onBackPressed() { if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed() }
+    override fun onBackPressed() {
+        if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    }
 
     override fun onDestroy() {
-        try { if (Python.isStarted()) Python.getInstance().getModule("embedded_server").callAttr("stop") } catch (_: Throwable) {}
+        // Deliberately do NOT stop the Python server here. DownloadService owns it
+        // so downloads continue when the Activity/browser UI is closed.
         executor.shutdownNow()
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
