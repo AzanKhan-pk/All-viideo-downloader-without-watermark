@@ -7,34 +7,45 @@ LAUNCHER = ROOT / "windows" / "launcher.py"
 
 
 def main() -> None:
-    """Harden the existing launcher without replacing its startup logic.
+    """Keep the Windows launcher on the bundled Chromium architecture.
 
-    Important: newer launchers keep run_server() nested inside main(), while
-    older revisions used a top-level helper. Validate the actual server entry
-    point instead of requiring one particular layout.
+    The project no longer uses pywebview/WebView2. Older compatibility code
+    could accidentally reintroduce a WebView2 import into a generated release,
+    which caused a startup NameError when pywebview was not bundled. Remove
+    those obsolete lines defensively before every Windows build.
     """
     text = LAUNCHER.read_text(encoding="utf-8")
 
-    # Disable GPU acceleration before importing pywebview. This is only a
-    # WebView2 compatibility setting and does not replace launcher logic.
-    if "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" not in text:
-        marker = "import webview\n"
-        if marker in text:
-            text = text.replace(
-                marker,
-                'import os\nos.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu")\n\nimport webview\n',
-                1,
-            )
+    # Never allow the retired WebView2 dependency into the desktop launcher.
+    lines = text.splitlines()
+    cleaned = []
+    skip_env_continuation = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "import webview":
+            continue
+        if "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" in line:
+            continue
+        cleaned.append(line)
+    text = "\n".join(cleaned) + "\n"
 
-    # Both supported launcher layouts have start_server(). A modern launcher
-    # may additionally define run_server() inside main(). Do not rewrite main.
-    required = ("def start_server(", "def main(", "if __name__ == \"__main__\":")
+    # The current architecture must launch the independent Chromium shell.
+    required = (
+        "def start_server(",
+        "def locate_bundled_browser(",
+        "def launch_browser_app(",
+        "def main(",
+        "if __name__ == \"__main__\":",
+    )
     missing = [item for item in required if item not in text]
     if missing:
         raise SystemExit("Launcher validation failed; missing: " + ", ".join(missing))
 
+    if "import webview" in text or "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" in text:
+        raise SystemExit("Obsolete WebView2 code remains in launcher.py")
+
     LAUNCHER.write_text(text, encoding="utf-8")
-    print("Windows runtime compatibility patch applied without replacing launcher main().")
+    print("Windows runtime compatibility patch applied; WebView2 code removed.")
 
 
 if __name__ == "__main__":
