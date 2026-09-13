@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -41,6 +42,54 @@ def _safe_file(relative):
     return target
 
 
+def _record_completed_job(job):
+    if not isinstance(job, dict) or str(job.get("status", "")).lower() != "completed":
+        return
+    filename = str(job.get("filename") or "").strip()
+    if not filename:
+        return
+    target = _safe_file(filename)
+    if not target or not target.is_file() or target.stat().st_size <= 0:
+        return
+    item = {
+        "id": uuid.uuid4().hex,
+        "title": str(job.get("title") or filename),
+        "filename": filename,
+        "relative_path": filename.replace("\\", "/"),
+        "download_url": str(job.get("download_url") or f"/api/file/{filename}"),
+        "mode": str(job.get("mode") or "video"),
+        "created_at": int(job.get("finished_at") or time.time()),
+        "filesize": target.stat().st_size,
+    }
+    with _HISTORY_LOCK:
+        items = _load_history()
+        items = [old for old in items if old.get("relative_path") != item["relative_path"]]
+        items.insert(0, item)
+        _save_history(items)
+
+
+# Persist completion on the server as well as in the UI. This means the list survives
+# closing/reopening the app even if the browser-side completion hook was interrupted.
+_original_core_update_job = core_app.update_job
+
+def _history_update_job(job_id, **values):
+    _original_core_update_job(job_id, **values)
+    if str(values.get("status", "")).lower() == "completed":
+        try:
+            _record_completed_job(core_app.get_job(job_id))
+        except Exception:
+            pass
+
+core_app.update_job = _history_update_job
+
+# media_features imported update_job directly, so patch its bound reference too.
+try:
+    import media_features
+    media_features.update_job = _history_update_job
+except Exception:
+    pass
+
+
 @app.get("/api/history")
 def get_history():
     with _HISTORY_LOCK:
@@ -74,7 +123,7 @@ def add_history():
         "relative_path": relative,
         "download_url": str(data.get("download_url") or f"/api/file/{filename}"),
         "mode": str(data.get("mode") or "video"),
-        "created_at": int(data.get("created_at") or __import__("time").time()),
+        "created_at": int(data.get("created_at") or time.time()),
         "filesize": target.stat().st_size,
     }
     with _HISTORY_LOCK:
