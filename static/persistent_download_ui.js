@@ -8,6 +8,7 @@
     .avd-open-folder{border-color:rgba(124,58,237,.35);color:#cdbdff;background:#11111a}
     .avd-remove-history{position:absolute;right:9px;top:8px;width:28px;height:28px;border:0;border-radius:8px;background:rgba(239,68,68,.08);color:#ffb4b4;cursor:pointer;font-weight:900;line-height:28px;text-align:center}
     .job{position:relative}
+    .job:has(.avd-remove-history) .job-top{padding-right:42px}
     .avd-history-card .job-actions{display:none!important}
     .avd-history-card .completed-link{margin-right:4px}
     .job-title,.job-error,.result-title,.result-meta{user-select:text!important;-webkit-user-select:text!important;cursor:text}
@@ -19,186 +20,98 @@
   const section = () => $('#downloads');
   const count = () => $('#jobsCount');
 
-  function relativePath(item) {
-    return String(item.relative_path || item.filename || '').replace(/^[/\\]+/, '');
-  }
+  function relativePath(item) { return String(item.relative_path || item.filename || '').replace(/^[/\\]+/, ''); }
 
   async function saveHistory(data) {
     if (!data || !data.filename || !data.download_url) return;
     const url = String(data.download_url);
     const relative = url.includes('/api/special-file/') ? url.split('/api/special-file/')[1] : String(data.filename);
     try {
-      await fetch('/api/history', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          title: data.title || data.filename,
-          filename: data.filename,
-          relative_path: decodeURIComponent(relative),
-          download_url: data.download_url,
-          mode: data.mode || 'video'
-        })
-      });
+      await fetch('/api/history', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:data.title||data.filename,filename:data.filename,relative_path:decodeURIComponent(relative),download_url:data.download_url,mode:data.mode||'video'})});
     } catch (_) {}
   }
 
   async function openFolder(item) {
     try {
-      const response = await fetch('/api/history/open', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({relative_path: relativePath(item), filename: item.filename})
-      });
+      const response = await fetch('/api/history/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({relative_path:relativePath(item),filename:item.filename})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to open the file location.');
       if (typeof showToast === 'function') showToast('Opened file location.');
-    } catch (error) {
-      if (typeof showToast === 'function') showToast(error.message || 'Unable to open the file location.');
-    }
+    } catch (error) { if (typeof showToast === 'function') showToast(error.message || 'Unable to open the file location.'); }
   }
 
   async function removeHistory(item, card) {
     try {
-      const response = await fetch(`/api/history/${encodeURIComponent(item.id)}`, {method:'DELETE'});
+      const response = await fetch(`/api/history/${encodeURIComponent(item.id)}`,{method:'DELETE'});
       if (!response.ok) throw new Error('Unable to remove this item from the list.');
-      card.remove();
-      updateCount();
+      card.remove(); updateCount();
       if (typeof showToast === 'function') showToast('Removed from download list.');
-    } catch (error) {
-      if (typeof showToast === 'function') showToast(error.message || 'Unable to remove this item.');
-    }
+    } catch (error) { if (typeof showToast === 'function') showToast(error.message || 'Unable to remove this item.'); }
   }
 
   function updateCount() {
-    const box = jobs();
-    if (count() && box) count().textContent = String(box.querySelectorAll('.job').length);
-    if (section() && box) section().hidden = box.querySelectorAll('.job').length === 0;
+    const box=jobs();
+    if(count()&&box)count().textContent=String(box.querySelectorAll('.job').length);
+    if(section()&&box)section().hidden=box.querySelectorAll('.job').length===0;
   }
 
-  function addControls(card, item, historyCard=false) {
-    if (!card || !item) return;
-    card.classList.toggle('avd-history-card', historyCard);
-    if (card.querySelector('.avd-remove-history')) return;
-
-    const top = card.querySelector('.job-top');
-    const complete = card.querySelector('[data-field="complete"]');
-    if (!top || !complete) return;
-
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'avd-remove-history';
-    remove.title = 'Remove from download list';
-    remove.setAttribute('aria-label', 'Remove from download list');
-    remove.textContent = '×';
-    remove.addEventListener('click', () => removeHistory(item, card));
-    top.appendChild(remove);
-
-    let actions = card.querySelector('.avd-history-actions');
-    if (!actions) {
-      actions = document.createElement('div');
-      actions.className = 'avd-history-actions';
-      complete.appendChild(actions);
-    }
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'small-btn avd-open-folder';
-    open.textContent = '📂 Open in folder';
-    open.addEventListener('click', () => openFolder(item));
-    actions.appendChild(open);
+  function addControls(card,item,historyCard=false) {
+    if(!card||!item)return;
+    card.classList.toggle('avd-history-card',historyCard);
+    if(card.querySelector('.avd-remove-history'))return;
+    const top=card.querySelector('.job-top'),complete=card.querySelector('[data-field="complete"]');
+    if(!top||!complete)return;
+    const remove=document.createElement('button');remove.type='button';remove.className='avd-remove-history';remove.title='Remove from download list';remove.setAttribute('aria-label','Remove from download list');remove.textContent='×';remove.addEventListener('click',()=>removeHistory(item,card));top.appendChild(remove);
+    let actions=card.querySelector('.avd-history-actions');
+    if(!actions){actions=document.createElement('div');actions.className='avd-history-actions';complete.appendChild(actions)}
+    const open=document.createElement('button');open.type='button';open.className='small-btn avd-open-folder';open.textContent='📂 Open in folder';open.addEventListener('click',()=>openFolder(item));actions.appendChild(open);
   }
 
   function historyCard(item) {
-    const card = document.createElement('article');
-    card.className = 'job avd-history-card';
-    card.dataset.historyId = item.id;
-    const size = Number(item.filesize || 0);
-    const sizeText = typeof formatBytes === 'function' ? formatBytes(size) : `${size} B`;
-    card.innerHTML = `<div class="job-top"><div class="job-title" data-field="title"></div><div class="job-status" data-field="status">COMPLETED</div></div><div class="job-progress"><div class="job-bar" data-field="bar" style="width:100%"></div></div><div class="job-stats"><div class="stat"><div class="stat-label">Progress</div><div class="stat-value">100%</div></div><div class="stat"><div class="stat-label">File size</div><div class="stat-value">${escapeHtml(sizeText)}</div></div><div class="stat"><div class="stat-label">Speed</div><div class="stat-value">—</div></div><div class="stat"><div class="stat-label">Time remaining</div><div class="stat-value">Complete</div></div></div><div class="job-actions"></div><div data-field="complete" style="margin-top:10px"></div>`;
-    card.querySelector('[data-field="title"]').textContent = item.title || item.filename || 'Download';
-    const complete = card.querySelector('[data-field="complete"]');
-    const link = document.createElement('a');
-    link.className = 'completed-link';
-    link.href = item.download_url || `/api/file/${encodeURIComponent(item.filename)}`;
-    link.download = item.filename || 'download';
-    link.textContent = `⬇ Save ${item.filename || 'File'}`;
-    complete.appendChild(link);
-    addControls(card, item, true);
-    return card;
+    const card=document.createElement('article');card.className='job avd-history-card';card.dataset.historyId=item.id;
+    const size=Number(item.filesize||0),sizeText=typeof formatBytes==='function'?formatBytes(size):`${size} B`;
+    card.innerHTML=`<div class="job-top"><div class="job-title" data-field="title"></div><div class="job-status" data-field="status">COMPLETED</div></div><div class="job-progress"><div class="job-bar" data-field="bar" style="width:100%"></div></div><div class="job-stats"><div class="stat"><div class="stat-label">Progress</div><div class="stat-value">100%</div></div><div class="stat"><div class="stat-label">File size</div><div class="stat-value">${escapeHtml(sizeText)}</div></div><div class="stat"><div class="stat-label">Speed</div><div class="stat-value">—</div></div><div class="stat"><div class="stat-label">Time remaining</div><div class="stat-value">Complete</div></div></div><div class="job-actions"></div><div data-field="complete" style="margin-top:10px"></div>`;
+    card.querySelector('[data-field="title"]').textContent=item.title||item.filename||'Download';
+    const complete=card.querySelector('[data-field="complete"]'),link=document.createElement('a');
+    link.className='completed-link';link.href=item.download_url||`/api/file/${encodeURIComponent(item.filename)}`;link.download=item.filename||'download';link.textContent=`⬇ Save ${item.filename||'File'}`;complete.appendChild(link);
+    addControls(card,item,true);return card;
   }
 
-  function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+
+  async function loadHistory(){
+    try{
+      const response=await fetch('/api/history',{cache:'no-store'}),data=await response.json();
+      if(!response.ok||!Array.isArray(data.items))return;
+      const box=jobs();if(!box)return;
+      [...box.querySelectorAll('.avd-history-card')].forEach(card=>card.remove());
+      data.items.forEach(item=>box.appendChild(historyCard(item)));updateCount();
+    }catch(_){ }
   }
 
-  async function loadHistory() {
-    try {
-      const response = await fetch('/api/history', {cache:'no-store'});
-      const data = await response.json();
-      if (!response.ok || !Array.isArray(data.items)) return;
-      const box = jobs();
-      if (!box) return;
-      [...box.querySelectorAll('.avd-history-card')].forEach(card => card.remove());
-      data.items.forEach(item => box.appendChild(historyCard(item)));
-      updateCount();
-    } catch (_) {}
+  function enhanceCompletedJob(jobId,data){
+    const card=document.getElementById(`job-${jobId}`);
+    if(!card||!data||String(data.status).toLowerCase()!=='completed'||!data.filename)return;
+    const item={id:`job-${jobId}`,title:data.title||data.filename,filename:data.filename,filesize:data.filesize||data.total_bytes||0,relative_path:data.filename,download_url:data.download_url,mode:data.mode||'video'};
+    addControls(card,item,false);saveHistory(data);updateCount();
   }
 
-  function enhanceCompletedJob(jobId, data) {
-    const card = document.getElementById(`job-${jobId}`);
-    if (!card || !data || String(data.status).toLowerCase() !== 'completed' || !data.filename) return;
-    const item = {
-      id: `job-${jobId}`,
-      title: data.title || data.filename,
-      filename: data.filename,
-      filesize: data.filesize || data.total_bytes || 0,
-      relative_path: data.filename,
-      download_url: data.download_url,
-      mode: data.mode || 'video'
-    };
-    addControls(card, item, false);
-    saveHistory(data);
-    updateCount();
+  function installRenderHook(){
+    if(typeof window.renderJob!=='function'||window.__AVD_RENDER_HOOK__)return;
+    const original=window.renderJob;
+    window.renderJob=function(jobId,data){const result=original.apply(this,arguments);if(data&&String(data.status).toLowerCase()==='completed')setTimeout(()=>enhanceCompletedJob(jobId,data),0);return result};
+    window.__AVD_RENDER_HOOK__=true;
   }
 
-  function installRenderHook() {
-    if (typeof window.renderJob !== 'function' || window.__AVD_RENDER_HOOK__) return;
-    const original = window.renderJob;
-    window.renderJob = function(jobId, data) {
-      const result = original.apply(this, arguments);
-      if (data && String(data.status).toLowerCase() === 'completed') setTimeout(() => enhanceCompletedJob(jobId, data), 0);
-      return result;
-    };
-    window.__AVD_RENDER_HOOK__ = true;
-  }
+  let lastTextSelection='';
+  document.addEventListener('contextmenu',()=>{try{lastTextSelection=String(window.getSelection?window.getSelection()||'':'').trim()}catch(_){lastTextSelection=''}},true);
+  document.addEventListener('click',async event=>{
+    const button=event.target.closest('#avdContextMenu [data-action="copy"]');
+    if(!button||!lastTextSelection)return;
+    try{await navigator.clipboard.writeText(lastTextSelection)}catch(_){const area=document.createElement('textarea');area.value=lastTextSelection;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch(__){}area.remove()}
+    lastTextSelection='';
+  },true);
 
-  // Preserve selected text before the app-owned context menu opens.
-  let lastTextSelection = '';
-  document.addEventListener('contextmenu', () => {
-    try { lastTextSelection = String(window.getSelection ? window.getSelection() || '' : '').trim(); } catch (_) { lastTextSelection = ''; }
-  }, true);
-
-  // The original menu may run first and clear the selection; if that happens,
-  // complete its Copy action with the text captured at right-click time.
-  document.addEventListener('click', async event => {
-    const button = event.target.closest('#avdContextMenu [data-action="copy"]');
-    if (!button || !lastTextSelection) return;
-    try {
-      await navigator.clipboard.writeText(lastTextSelection);
-    } catch (_) {
-      const area = document.createElement('textarea');
-      area.value = lastTextSelection; area.style.position='fixed'; area.style.opacity='0';
-      document.body.appendChild(area); area.select();
-      try { document.execCommand('copy'); } catch (__) {}
-      area.remove();
-    }
-    lastTextSelection = '';
-  }, true);
-
-  const boot = () => {
-    installRenderHook();
-    loadHistory();
-    setTimeout(installRenderHook, 250);
-    setTimeout(installRenderHook, 1000);
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
+  const boot=()=>{installRenderHook();loadHistory();setTimeout(installRenderHook,250);setTimeout(installRenderHook,1000)};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
