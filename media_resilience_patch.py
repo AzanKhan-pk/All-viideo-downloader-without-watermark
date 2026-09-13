@@ -1,23 +1,16 @@
-"""Focused resilience layer for public TikTok/Pinterest media.
-
-It deliberately sits on top of the stable downloader instead of replacing it.
-It rejects HTML error pages masquerading as media, supports Pinterest HLS
-playlists through FFmpeg, and broadens public-page media URL discovery.
-"""
+"""Focused resilience layer for public TikTok/Pinterest media."""
 
 import re
 import shutil
 import subprocess
-import time
 from pathlib import Path
-from urllib.parse import urlparse
 import urllib.request
 
 import core_app
 import media_features
 import site_fallbacks
 from flask import jsonify, request
-
+from werkzeug.exceptions import HTTPException
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -45,10 +38,9 @@ def _header_arg(headers):
 def _download_hls(url, destination, source_url, extra_headers=None):
     if not core_app.ffmpeg_available():
         raise RuntimeError("FFmpeg is required for this streaming video.")
-    headers = _headers(source_url, extra_headers)
     destination = Path(destination)
     command = [
-        "ffmpeg", "-y", "-headers", _header_arg(headers),
+        "ffmpeg", "-y", "-headers", _header_arg(_headers(source_url, extra_headers)),
         "-i", str(url), "-map", "0:v:0?", "-map", "0:a:0?",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(destination),
@@ -59,16 +51,11 @@ def _download_hls(url, destination, source_url, extra_headers=None):
         raise RuntimeError("The streaming media could not be read. " + result.stderr[-900:])
 
 
-_ORIGINAL_DIRECT = media_features._download_direct
-
-
 def _safe_download_direct(url, destination, source_url, extra_headers=None):
     url = str(url or "").strip()
     if _is_hls(url):
         return _download_hls(url, destination, source_url, extra_headers)
-
-    headers = _headers(source_url, extra_headers)
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(url, headers=_headers(source_url, extra_headers))
     with urllib.request.urlopen(req, timeout=90) as response:
         content_type = str(response.headers.get("Content-Type") or "").lower()
         first = response.read(1024)
@@ -84,17 +71,12 @@ def _safe_download_direct(url, destination, source_url, extra_headers=None):
 
 media_features._download_direct = _safe_download_direct
 
-
-# Pinterest often exposes a valid video as HLS and also exposes progressive MP4
-# candidates elsewhere in the page. Add those candidates without changing the
-# existing fallback parser.
 _ORIGINAL_PINTEREST = site_fallbacks.pinterest
 
 
 def _extra_urls_from_html(html):
     text = str(html or "").replace("\\/", "/").replace("\\u002F", "/")
-    urls = []
-    seen = set()
+    urls, seen = [], set()
     for match in re.findall(r"https?://[^\"'<>\\\s]+", text, re.I):
         value = match.rstrip("\\,;)")
         if value in seen:
@@ -109,55 +91,41 @@ def _enhanced_pinterest(url):
     result = _ORIGINAL_PINTEREST(url)
     try:
         html, final_url, headers = site_fallbacks._get(url, "https://www.pinterest.com/")
-        urls = _extra_urls_from_html(html)
-        videos = []
-        images = []
-        for value in urls:
+        videos, images = [], []
+        for value in _extra_urls_from_html(html):
             low = value.lower()
             if ".mp4" in low or ".m3u8" in low or "/videos/" in low:
-                videos.append({"url": value, "height": 0, "http_headers": headers})
+                videos.append(value)
             elif ".jpg" in low or ".jpeg" in low or ".png" in low or ".webp" in low or "i.pinimg.com" in low:
-                images.append({"url": value, "width": None, "height": None, "http_headers": headers})
-
+                images.append(value)
         if result is None:
             result = {"title": "Pinterest media", "source_url": final_url, "headers": headers, "_fallback_direct": True}
         result.setdefault("headers", headers)
         result.setdefault("source_url", final_url)
         result["_fallback_direct"] = True
-
-        existing_video = result.get("formats") or []
-        existing_urls = {str(x.get("url")) for x in existing_video if isinstance(x, dict)}
-        for video in videos:
-            if video["url"] not in existing_urls:
-                existing_video.append({
-                    "format_id": f"pin-html-{len(existing_video)}",
-                    "url": video["url"], "height": video.get("height") or 0,
-                    "ext": "mp4" if ".m3u8" not in video["url"].lower() else "mp4",
-                    "vcodec": "h264", "acodec": "aac", "http_headers": headers,
-                    "protocol": "m3u8_native" if ".m3u8" in video["url"].lower() else "https",
-                })
-        if existing_video:
+        formats = result.get("formats") or []
+        known = {str(x.get("url")) for x in formats if isinstance(x, dict)}
+        for value in videos:
+            if value not in known:
+                formats.append({"format_id": f"pin-html-{len(formats)}", "url": value, "height": 0,
+                                "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers,
+                                "protocol": "m3u8_native" if ".m3u8" in value.lower() else "https"})
+        if formats:
             result["type"] = "video"
-            result["formats"] = existing_video
-
+            result["formats"] = formats
         existing_images = result.get("images") or []
-        existing_image_urls = {str(x.get("url")) for x in existing_images if isinstance(x, dict)}
-        for image in images:
-            if image["url"] not in existing_image_urls:
-                existing_images.append(image)
+        known_images = {str(x.get("url")) for x in existing_images if isinstance(x, dict)}
+        for value in images:
+            if value not in known_images:
+                existing_images.append({"url": value, "width": None, "height": None, "http_headers": headers})
         if existing_images:
             result["images"] = existing_images[:40]
-
         return result if (result.get("formats") or result.get("images")) else None
     except Exception:
         return result
 
 
 site_fallbacks.pinterest = _enhanced_pinterest
-
-
-# Safe quality conversion: never upscale a smaller source.
-_ORIGINAL_RESIZE = core_app.resize_video
 
 
 def _safe_resize(input_file, output_file, target_height, job_id):
@@ -177,9 +145,6 @@ def _safe_resize(input_file, output_file, target_height, job_id):
 core_app.resize_video = _safe_resize
 
 
-# Replace the preview endpoint with a JSON-safe version. In particular, a Pinterest
-# fallback with images attached to a video must remain a video, not be misclassified
-# as a photo gallery.
 def _preview_json():
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
@@ -207,16 +172,28 @@ def _preview_json():
             thumbs = fallback.get("images") or []
             if thumbs and isinstance(thumbs[0], dict):
                 thumbnail = thumbs[0].get("url")
-        return jsonify({
-            "success": True,
-            "title": (fallback or {}).get("title") or info.get("title") or "Public media",
-            "extractor": info.get("extractor_key") or info.get("extractor"),
-            "is_photo": bool(is_photo),
-            "thumbnail": thumbnail,
-            "images": images[:40],
-        })
+        return jsonify({"success": True,
+                        "title": (fallback or {}).get("title") or info.get("title") or "Public media",
+                        "extractor": info.get("extractor_key") or info.get("extractor"),
+                        "is_photo": bool(is_photo), "thumbnail": thumbnail, "images": images[:40]})
     except Exception as error:
         return jsonify({"error": f"Media preview failed: {error}"}), 502
 
 
 core_app.app.view_functions["media_preview"] = _preview_json
+
+
+# API routes should never return Flask's default HTML error page. That HTML is what
+# the browser reports as "Unexpected token '<' / <!DOCTYPE ... is not valid JSON".
+@core_app.app.errorhandler(HTTPException)
+def _api_http_error(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": error.description or error.name}), error.code
+    return error
+
+
+@core_app.app.errorhandler(Exception)
+def _api_exception(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal media service error. Please retry this public URL."}), 500
+    raise error
