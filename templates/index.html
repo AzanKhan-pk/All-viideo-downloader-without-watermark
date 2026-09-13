@@ -1,185 +1,46 @@
 {% include 'core_index.html' %}
 
 <style>
-/* Focused social-media controls and the app-owned context menu. */
 .social-gallery{margin-top:16px;padding:14px;border:1px solid rgba(124,58,237,.22);border-radius:15px;background:rgba(124,58,237,.055)}
 .social-gallery-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}.social-gallery-title{font-size:13px;font-weight:850}.social-gallery-count{font-size:11px;color:#9d9dad}
 .social-gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;max-height:360px;overflow:auto;padding-right:2px}.social-image-card{position:relative;display:block;min-width:0;padding:0;border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden;background:#0b0b12;cursor:pointer}.social-image-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}.social-image-card input{position:absolute;top:7px;left:7px;width:18px;height:18px;accent-color:#7c3aed;z-index:2}.social-image-card.selected{border-color:rgba(250,204,21,.7);box-shadow:0 0 0 2px rgba(250,204,21,.12)}.social-gallery-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.social-gallery-actions .chip{min-height:38px}.social-gallery-actions .primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}
 .compact-location{display:flex;gap:8px;align-items:center;margin-left:auto}.compact-location .chip{min-height:40px;white-space:nowrap}.compact-location .browse{border-color:rgba(124,58,237,.42);color:#cdbdff}.compact-location .open{border-color:rgba(250,204,21,.30);color:#facc15}
-.avd-context-menu{position:fixed!important;z-index:2147483647!important;min-width:190px!important;padding:7px!important;border:1px solid rgba(255,255,255,.12)!important;border-radius:13px!important;background:rgba(18,15,28,.98)!important;box-shadow:0 18px 50px rgba(0,0,0,.48)!important;display:none!important}
-.avd-context-menu.open{display:block!important}
-.avd-context-menu button{display:block!important;width:100%!important;text-align:left!important;border:0!important;border-radius:9px!important;padding:10px 12px!important;background:transparent!important;color:#fff!important;cursor:pointer!important;font:700 13px Inter,Arial,sans-serif!important}
-.avd-context-menu button:hover{background:rgba(255,255,255,.11)!important}.avd-context-menu button:disabled{opacity:.38!important;cursor:not-allowed!important}
+.avd-context-menu{position:fixed!important;z-index:2147483647!important;min-width:190px!important;padding:7px!important;border:1px solid rgba(255,255,255,.12)!important;border-radius:13px!important;background:rgba(18,15,28,.98)!important;box-shadow:0 18px 50px rgba(0,0,0,.48)!important;display:none!important}.avd-context-menu.open{display:block!important}.avd-context-menu button{display:block!important;width:100%!important;text-align:left!important;border:0!important;border-radius:9px!important;padding:10px 12px!important;background:transparent!important;color:#fff!important;cursor:pointer!important;font:700 13px Inter,Arial,sans-serif!important}.avd-context-menu button:hover{background:rgba(255,255,255,.11)!important}.avd-context-menu button:disabled{opacity:.38!important;cursor:not-allowed!important}
 @media(max-width:760px){.social-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.compact-location{width:100%;margin-left:0}.compact-location .chip{flex:1}}
 </style>
 
 <script>
 (() => {
-  const urlInput = document.getElementById('url');
-  const fetchButton = document.getElementById('fetch');
-  const result = document.getElementById('result');
-  const status = document.getElementById('status');
-  const qualities = document.querySelector('.qualities');
-  if (!urlInput || !fetchButton || !result || !status || !qualities) return;
+  const urlInput=document.getElementById('url'), fetchButton=document.getElementById('fetch'), result=document.getElementById('result'), status=document.getElementById('status'), qualities=document.querySelector('.qualities');
+  if(!urlInput||!fetchButton||!result||!status||!qualities)return;
+  const isSpecial=value=>{try{const host=new URL(value).hostname.toLowerCase().replace(/^www\./,'');return host==='tiktok.com'||host.endsWith('.tiktok.com')||host==='pinterest.com'||host.endsWith('.pinterest.com')||host.endsWith('.pinterest.co.uk')||host.endsWith('.pinterest.de')||host.endsWith('.pinterest.fr')||host==='pin.it'}catch(_){return false}};
+  const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  const activeMode=()=>document.querySelector('.modes [data-mode].active')?.dataset.mode||'video';
+  const activeQuality=()=>Number(document.querySelector('.qualities [data-q].active')?.dataset.q||144);
 
-  const isSpecial = value => {
-    try {
-      const host = new URL(value).hostname.toLowerCase().replace(/^www\./, '');
-      return host === 'tiktok.com' || host.endsWith('.tiktok.com') ||
-             host === 'pinterest.com' || host.endsWith('.pinterest.com') ||
-             host.endsWith('.pinterest.co.uk') || host.endsWith('.pinterest.de') ||
-             host.endsWith('.pinterest.fr') || host === 'pin.it';
-    } catch (_) { return false; }
-  };
-
-  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const activeMode = () => document.querySelector('.modes [data-mode].active')?.dataset.mode || 'video';
-  const activeQuality = () => Number(document.querySelector('.qualities [data-q].active')?.dataset.q || 144);
-
-  if (!document.getElementById('compactLocation')) {
-    const wrap = document.createElement('div');
-    wrap.id = 'compactLocation';
-    wrap.className = 'compact-location';
-    wrap.innerHTML = '<button class="chip browse" id="compactBrowse" type="button">📍 Browse Location</button><button class="chip open" id="compactOpen" type="button">📂 Open Folder</button>';
-    qualities.appendChild(wrap);
-    const call = async (endpoint, button) => {
-      button.disabled = true;
-      try {
-        const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store'});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to access the download folder.');
-        status.textContent = endpoint.includes('/browse') ? (data.cancelled ? 'Download location unchanged.' : `Download location: ${data.path}`) : `Opened download folder: ${data.path}`;
-      } catch (error) { status.textContent = error.message || 'Unable to access the download folder.'; }
-      finally { button.disabled = false; }
-    };
-    wrap.querySelector('#compactBrowse').onclick = () => call('/api/location/browse', wrap.querySelector('#compactBrowse'));
-    wrap.querySelector('#compactOpen').onclick = () => call('/api/location/open', wrap.querySelector('#compactOpen'));
+  if(!document.getElementById('compactLocation')){
+    const wrap=document.createElement('div');wrap.id='compactLocation';wrap.className='compact-location';wrap.innerHTML='<button class="chip browse" id="compactBrowse" type="button">📍 Browse Location</button><button class="chip open" id="compactOpen" type="button">📂 Open Folder</button>';qualities.appendChild(wrap);
+    const call=async(endpoint,button)=>{button.disabled=true;try{const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to access the download folder.');status.textContent=endpoint.includes('/browse')?(data.cancelled?'Download location unchanged.':`Download location: ${data.path}`):`Opened download folder: ${data.path}`;}catch(error){status.textContent=error.message||'Unable to access the download folder.'}finally{button.disabled=false}};
+    wrap.querySelector('#compactBrowse').onclick=()=>call('/api/location/browse',wrap.querySelector('#compactBrowse'));wrap.querySelector('#compactOpen').onclick=()=>call('/api/location/open',wrap.querySelector('#compactOpen'));
   }
 
-  // App-owned right-click menu: the browser/Chrome context menu is suppressed.
-  if (!document.getElementById('avdContextMenu')) {
-    const menu = document.createElement('div');
-    menu.id = 'avdContextMenu';
-    menu.className = 'avd-context-menu';
-    menu.setAttribute('role', 'menu');
-    menu.innerHTML = '<button type="button" data-action="copy">Copy</button><button type="button" data-action="cut">Cut</button><button type="button" data-action="paste">Paste</button><button type="button" data-action="select">Select all</button><button type="button" data-action="refresh">Refresh</button>';
-    document.body.appendChild(menu);
-    let target = null;
-    const closeMenu = () => { menu.classList.remove('open'); target = null; };
-    const selectedText = () => window.getSelection ? String(window.getSelection() || '').trim() : '';
-    const inputTarget = () => target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) ? target : null;
-    const writeClipboard = async text => {
-      if (!text) return;
-      try { await navigator.clipboard.writeText(text); }
-      catch (_) {
-        const area = document.createElement('textarea'); area.value = text; area.style.position='fixed'; area.style.opacity='0';
-        document.body.appendChild(area); area.select(); try { document.execCommand('copy'); } catch (__) {} area.remove();
-      }
-    };
-    const readClipboard = async () => { try { return await navigator.clipboard.readText(); } catch (_) { return ''; } };
-    menu.addEventListener('click', async event => {
-      const action = event.target.closest('button')?.dataset.action;
-      if (!action) return;
-      const field = inputTarget();
-      try {
-        if (action === 'copy') {
-          if (field) await writeClipboard(field.value.slice(field.selectionStart ?? 0, field.selectionEnd ?? 0));
-          else await writeClipboard(selectedText());
-        } else if (action === 'cut' && field) {
-          const start = field.selectionStart ?? 0, end = field.selectionEnd ?? 0;
-          if (end > start) { await writeClipboard(field.value.slice(start, end)); field.setRangeText('', start, end, 'start'); field.dispatchEvent(new Event('input', {bubbles:true})); }
-        } else if (action === 'paste' && field) {
-          const text = await readClipboard();
-          if (text) { const start = field.selectionStart ?? field.value.length, end = field.selectionEnd ?? field.value.length; field.setRangeText(text, start, end, 'end'); field.dispatchEvent(new Event('input', {bubbles:true})); }
-        } else if (action === 'select') {
-          if (field) { field.focus(); if (field.select) field.select(); if (field.isContentEditable) document.execCommand('selectAll'); }
-          else { const range = document.createRange(); range.selectNodeContents(document.body); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }
-        } else if (action === 'refresh') { window.location.reload(); }
-      } finally { closeMenu(); }
-    });
-    document.addEventListener('contextmenu', event => {
-      event.preventDefault();
-      target = event.target;
-      const field = inputTarget();
-      const hasSelection = field ? (field.selectionEnd ?? 0) > (field.selectionStart ?? 0) : !!selectedText();
-      menu.querySelector('[data-action="copy"]').disabled = !hasSelection;
-      menu.querySelector('[data-action="cut"]').disabled = !field || !hasSelection;
-      menu.querySelector('[data-action="paste"]').disabled = !field;
-      const x = Math.min(event.clientX, window.innerWidth - 205), y = Math.min(event.clientY, window.innerHeight - 245);
-      menu.style.left = `${Math.max(6, x)}px`; menu.style.top = `${Math.max(6, y)}px`; menu.classList.add('open');
-    }, true);
-    document.addEventListener('mousedown', event => { if (!menu.contains(event.target)) closeMenu(); });
-    window.addEventListener('blur', closeMenu);
+  if(!document.getElementById('avdContextMenu')){
+    const menu=document.createElement('div');menu.id='avdContextMenu';menu.className='avd-context-menu';menu.setAttribute('role','menu');menu.innerHTML='<button type="button" data-action="copy">Copy</button><button type="button" data-action="cut">Cut</button><button type="button" data-action="paste">Paste</button><button type="button" data-action="select">Select all</button><button type="button" data-action="refresh">Refresh</button>';document.body.appendChild(menu);
+    let target=null;const closeMenu=()=>{menu.classList.remove('open');target=null};const selectedText=()=>window.getSelection?String(window.getSelection()||'').trim():'';const inputTarget=()=>target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable)?target:null;
+    const writeClipboard=async text=>{if(!text)return;try{await navigator.clipboard.writeText(text)}catch(_){const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch(__){}area.remove()}};
+    const readClipboard=async()=>{try{return await navigator.clipboard.readText()}catch(_){return ''}};
+    menu.addEventListener('click',async event=>{const action=event.target.closest('button')?.dataset.action;if(!action)return;const field=inputTarget();try{if(action==='copy'){if(field)await writeClipboard(field.value.slice(field.selectionStart??0,field.selectionEnd??0));else await writeClipboard(selectedText())}else if(action==='cut'&&field){const start=field.selectionStart??0,end=field.selectionEnd??0;if(end>start){await writeClipboard(field.value.slice(start,end));field.setRangeText('',start,end,'start');field.dispatchEvent(new Event('input',{bubbles:true}))}}else if(action==='paste'&&field){const text=await readClipboard();if(text){const start=field.selectionStart??field.value.length,end=field.selectionEnd??field.value.length;field.setRangeText(text,start,end,'end');field.dispatchEvent(new Event('input',{bubbles:true}))}}else if(action==='select'){if(field){field.focus();if(field.select)field.select();if(field.isContentEditable)document.execCommand('selectAll')}else{const range=document.createRange();range.selectNodeContents(document.body);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range)}}else if(action==='refresh')window.location.reload()}finally{closeMenu()}});
+    document.addEventListener('contextmenu',event=>{event.preventDefault();target=event.target;const field=inputTarget();const hasSelection=field?(field.selectionEnd??0)>(field.selectionStart??0):!!selectedText();menu.querySelector('[data-action="copy"]').disabled=!hasSelection;menu.querySelector('[data-action="cut"]').disabled=!field||!hasSelection;menu.querySelector('[data-action="paste"]').disabled=!field;const x=Math.min(event.clientX,window.innerWidth-205),y=Math.min(event.clientY,window.innerHeight-245);menu.style.left=`${Math.max(6,x)}px`;menu.style.top=`${Math.max(6,y)}px`;menu.classList.add('open')},true);
+    document.addEventListener('mousedown',event=>{if(!menu.contains(event.target))closeMenu()});window.addEventListener('blur',closeMenu);
   }
 
-  const originalFetch = window.fetchMedia;
+  async function startSpecial(kind,quality){const url=urlInput.value.trim(),button=document.getElementById('downloadBtn');if(button)button.disabled=true;try{const response=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,kind,quality})});const data=await response.json();if(!response.ok||!data.job_id)throw new Error(data.error||'Could not start the download.');if(typeof createJobCard==='function')createJobCard(data.job_id);status.textContent=kind==='images'?'Picture download started.':kind==='audio'?'Audio download started.':'Download started.';if(typeof showToast==='function')showToast('Download started.')}catch(error){status.textContent=error.message||'Download failed.';if(typeof showToast==='function')showToast(error.message||'Download failed.')}finally{if(button)button.disabled=false}}
 
-  async function startSpecial(kind, quality) {
-    const url = urlInput.value.trim();
-    const button = document.getElementById('downloadBtn');
-    if (button) button.disabled = true;
-    try {
-      const response = await fetch('/api/special-download', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,kind,quality})});
-      const data = await response.json();
-      if (!response.ok || !data.job_id) throw new Error(data.error || 'Could not start the download.');
-      if (typeof createJobCard === 'function') createJobCard(data.job_id);
-      status.textContent = kind === 'images' ? 'Picture download started.' : kind === 'audio' ? 'Audio download started.' : 'Download started.';
-      if (typeof showToast === 'function') showToast('Download started.');
-    } catch (error) {
-      status.textContent = error.message || 'Download failed.';
-      if (typeof showToast === 'function') showToast(error.message || 'Download failed.');
-    } finally { if (button) button.disabled = false; }
-  }
+  function renderGallery(data){const images=(data.images||[]).filter(item=>item&&item.url).slice(0,40);if(!images.length)return false;result.innerHTML=`<div class="social-gallery"><div class="social-gallery-head"><div class="social-gallery-title">🖼️ ${escapeHtml(data.title||'Pictures')}</div><div class="social-gallery-count">${images.length} image${images.length===1?'':'s'} found</div></div><div class="social-gallery-grid">${images.map((img,i)=>`<label class="social-image-card selected"><input type="checkbox" data-social-index="${i}" checked><img src="${escapeHtml(img.url)}" alt="Image ${i+1}" loading="lazy"></label>`).join('')}</div><div class="social-gallery-actions"><button class="chip" id="socialSelectAll" type="button">Select all</button><button class="chip" id="socialClearAll" type="button">Clear</button><button class="chip primary" id="socialDownloadSelected" type="button">⬇ Download selected</button>${data.is_photo?'':'<button class="chip" id="socialUseVideo" type="button">🎬 Download video</button>'}</div></div>`;result.hidden=false;const cards=[...result.querySelectorAll('.social-image-card')];cards.forEach(card=>card.addEventListener('click',event=>{if(event.target.matches('input')){card.classList.toggle('selected',event.target.checked);return}const cb=card.querySelector('input');cb.checked=!cb.checked;card.classList.toggle('selected',cb.checked)}));result.querySelector('#socialSelectAll').onclick=()=>cards.forEach(card=>{const cb=card.querySelector('input');cb.checked=true;card.classList.add('selected')});result.querySelector('#socialClearAll').onclick=()=>cards.forEach(card=>{const cb=card.querySelector('input');cb.checked=false;card.classList.remove('selected')});result.querySelector('#socialDownloadSelected').onclick=async()=>{const selected=[...result.querySelectorAll('[data-social-index]:checked')].map(cb=>images[Number(cb.dataset.socialIndex)]);if(!selected.length){status.textContent='Select at least one picture first.';return}const button=result.querySelector('#socialDownloadSelected');button.disabled=true;status.textContent='Starting picture download…';try{const response=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim(),kind:'images',images:selected})});const data=await response.json();if(!response.ok||!data.job_id)throw new Error(data.error||'Could not start picture download.');if(typeof createJobCard==='function')createJobCard(data.job_id);status.textContent='Picture download started.';if(typeof showToast==='function')showToast('Picture download started.')}catch(error){status.textContent=error.message||'Picture download failed.';if(typeof showToast==='function')showToast(error.message||'Picture download failed.')}finally{button.disabled=false}};const videoButton=result.querySelector('#socialUseVideo');if(videoButton)videoButton.onclick=()=>startSpecial('video',activeQuality());return true}
 
-  function renderGallery(data) {
-    const images = (data.images || []).filter(item => item && item.url).slice(0, 40);
-    if (!images.length) return false;
-    result.innerHTML = `<div class="social-gallery"><div class="social-gallery-head"><div class="social-gallery-title">🖼️ ${escapeHtml(data.title || 'Pictures')}</div><div class="social-gallery-count">${images.length} image${images.length === 1 ? '' : 's'} found</div></div><div class="social-gallery-grid">${images.map((img, i) => `<label class="social-image-card selected"><input type="checkbox" data-social-index="${i}" checked><img src="${escapeHtml(img.url)}" alt="Image ${i + 1}" loading="lazy"></label>`).join('')}</div><div class="social-gallery-actions"><button class="chip" id="socialSelectAll" type="button">Select all</button><button class="chip" id="socialClearAll" type="button">Clear</button><button class="chip primary" id="socialDownloadSelected" type="button">⬇ Download selected</button>${data.is_photo ? '' : '<button class="chip" id="socialUseVideo" type="button">🎬 Download video</button>'}</div></div>`;
-    result.hidden = false;
-    const cards = [...result.querySelectorAll('.social-image-card')];
-    cards.forEach(card => card.addEventListener('click', event => { if (event.target.matches('input')) { card.classList.toggle('selected', event.target.checked); return; } const cb=card.querySelector('input'); cb.checked=!cb.checked; card.classList.toggle('selected',cb.checked); }));
-    result.querySelector('#socialSelectAll').onclick = () => cards.forEach(card => { const cb=card.querySelector('input'); cb.checked=true; card.classList.add('selected'); });
-    result.querySelector('#socialClearAll').onclick = () => cards.forEach(card => { const cb=card.querySelector('input'); cb.checked=false; card.classList.remove('selected'); });
-    result.querySelector('#socialDownloadSelected').onclick = async () => {
-      const selected=[...result.querySelectorAll('[data-social-index]:checked')].map(cb=>images[Number(cb.dataset.socialIndex)]);
-      if (!selected.length) { status.textContent='Select at least one picture first.'; return; }
-      const button=result.querySelector('#socialDownloadSelected'); button.disabled=true; status.textContent='Starting picture download…';
-      try {
-        const response=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim(),kind:'images',images:selected})});
-        const data=await response.json(); if(!response.ok||!data.job_id) throw new Error(data.error||'Could not start picture download.');
-        if(typeof createJobCard==='function') createJobCard(data.job_id);
-        status.textContent='Picture download started.'; if(typeof showToast==='function') showToast('Picture download started.');
-      } catch(error) { status.textContent=error.message||'Picture download failed.'; if(typeof showToast==='function') showToast(error.message||'Picture download failed.'); }
-      finally { button.disabled=false; }
-    };
-    const videoButton=result.querySelector('#socialUseVideo'); if(videoButton) videoButton.onclick=()=>startSpecial('video',activeQuality());
-    return true;
-  }
+  async function specialPreview(){const response=await fetch('/api/media-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim()})});const data=await response.json();if(!response.ok)throw new Error(data.error||'The site did not return usable public media data.');return data}
+  async function specialFetch(){fetchButton.disabled=true;fetchButton.textContent='Reading…';result.hidden=true;status.textContent='Checking TikTok/Pinterest media…';try{const preview=await specialPreview();if(preview.is_photo&&activeMode()!=='audio'&&renderGallery(preview)){status.textContent='Select the pictures you want to download.'}else{result.innerHTML=`<div class="result-title">${escapeHtml(preview.title||'Public media')}</div><div class="result-meta">Platform: ${escapeHtml(preview.extractor||'TikTok / Pinterest')}<br>Media detected successfully. Choose your mode and start the download.</div><div class="download-area"><button class="btn download-btn" id="downloadBtn" type="button">${activeMode()==='audio'?'🎵 Start MP3 Download':`⬇ Start ${activeQuality()}p MP4 Download`}</button></div>`;result.hidden=false;document.getElementById('downloadBtn').addEventListener('click',()=>activeMode()==='audio'?startSpecial('audio',activeQuality()):startSpecial('video',activeQuality()));status.textContent='Media detected. Ready to download.'}}catch(error){status.textContent=error.message||'The site did not return usable public media data.';if(typeof showToast==='function')showToast(status.textContent)}finally{fetchButton.disabled=false;fetchButton.textContent='Fetch Media'}}
 
-  async function specialPreview() {
-    const response=await fetch('/api/media-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim()})});
-    const data=await response.json(); if(!response.ok) throw new Error(data.error||'The site did not return usable public media data.'); return data;
-  }
-
-  async function specialFetch() {
-    fetchButton.disabled=true; fetchButton.textContent='Reading…'; result.hidden=true; status.textContent='Checking TikTok/Pinterest media…';
-    try {
-      const preview=await specialPreview();
-      if(preview.is_photo && activeMode()!=='audio' && renderGallery(preview)) status.textContent='Select the pictures you want to download.';
-      else {
-        await originalFetch();
-        setTimeout(()=>{
-          const downloadButton=document.getElementById('downloadBtn'); if(!downloadButton) return;
-          const fresh=downloadButton.cloneNode(true); downloadButton.replaceWith(fresh);
-          fresh.addEventListener('click',()=> activeMode()==='audio' ? startSpecial('audio',activeQuality()) : startSpecial('video',activeQuality()));
-        },0);
-      }
-    } catch(error) { status.textContent=error.message||'The site did not return usable public media data.'; if(typeof showToast==='function') showToast(status.textContent); }
-    finally { fetchButton.disabled=false; fetchButton.textContent='Fetch Media'; }
-  }
-
-  const freshFetch=fetchButton.cloneNode(true); fetchButton.replaceWith(freshFetch);
-  freshFetch.addEventListener('click',()=>{ const url=urlInput.value.trim(); return isSpecial(url) ? specialFetch() : originalFetch(); });
-  urlInput.addEventListener('keydown',event=>{ if(event.key==='Enter'&&isSpecial(urlInput.value.trim())){ event.preventDefault(); event.stopImmediatePropagation(); freshFetch.click(); } },true);
+  const freshFetch=fetchButton.cloneNode(true);fetchButton.replaceWith(freshFetch);freshFetch.addEventListener('click',()=>{const url=urlInput.value.trim();return isSpecial(url)?specialFetch():fetchMedia()});urlInput.addEventListener('keydown',event=>{if(event.key==='Enter'&&isSpecial(urlInput.value.trim())){event.preventDefault();event.stopImmediatePropagation();freshFetch.click()}},true);
 })();
 </script>
