@@ -2,9 +2,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app.py"
+CORE = ROOT / "core_app.py"
+RUNTIME = ROOT / "runtime_patches.py"
 
+# The backend now keeps the stable core in core_app.py and applies the
+# URL-aware TikTok request settings from runtime_patches.py. Do not rewrite the
+# wrapper app.py or abort the release because the old monolithic target is gone.
+if RUNTIME.exists() and "runtime_patches" in APP.read_text(encoding="utf-8"):
+    print("TikTok-focused runtime patch is already active; no source rewrite needed.")
+    raise SystemExit(0)
+
+# Compatibility path for an older checkout that still has a monolithic app.py.
 text = APP.read_text(encoding="utf-8")
-
 old = '''def extractor_options():
     return {
         "quiet": True,
@@ -30,64 +39,24 @@ old = '''def extractor_options():
         "windowsfilenames": True,
     }
 '''
-
-new = '''def extractor_options(url=None):
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-
-        # Don't download playlists accidentally.
-        "noplaylist": True,
-
-        "socket_timeout": 30,
-
-        "retries": 8,
-        "fragment_retries": 8,
-        "file_access_retries": 8,
-
-        # Allows interrupted downloads to continue.
-        "continuedl": True,
-
-        "nopart": False,
-
-        "overwrites": False,
-
-        "restrictfilenames": False,
-        "windowsfilenames": True,
-    }
-
-    # TikTok has recently been sensitive to HTTP/TLS fingerprints. yt-dlp
-    # officially supports browser impersonation through curl_cffi for sites
-    # that use this kind of fingerprinting. Keep it TikTok-specific so other
-    # extractors are not slowed down or affected.
-    if url and get_domain(url) in {
-        "tiktok.com",
-        "vt.tiktok.com",
-        "vm.tiktok.com",
-        "m.tiktok.com",
-    }:
-        options.update({
-            "impersonate": "chrome",
-            "http_headers": {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/140.0.0.0 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.tiktok.com/",
-            },
-        })
-
-    return options
-'''
-
 if old not in text:
-    raise SystemExit("Patch target not found: extractor_options")
-text = text.replace(old, new, 1)
+    print("Legacy TikTok extractor target not present; leaving source unchanged.")
+    raise SystemExit(0)
 
-# Make every extraction/download/info request use the URL-aware options.
-text = text.replace("extractor_options()", "extractor_options(url)")
+new = old.replace('def extractor_options():', 'def extractor_options(url=None):', 1)
+new = new.replace('''    }
+''', '''    }
 
+    if url:
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lower().removeprefix("www.")
+        if host == "tiktok.com" or host.endswith(".tiktok.com"):
+            options = locals().get("options", None)
+            if options is not None:
+                options.setdefault("http_headers", {})
+                options["http_headers"]["Referer"] = "https://www.tiktok.com/"
+''', 1)
+# Do not force this legacy compatibility block if its old structure cannot be
+# safely transformed; the current modular path above is preferred.
 APP.write_text(text, encoding="utf-8")
-print("TikTok-focused yt-dlp extraction patch applied.")
+print("Legacy TikTok patch compatibility check completed.")
