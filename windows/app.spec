@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
-# Resolve the repository root from this spec file without relying on runtime paths.
 root = Path.cwd().resolve()
 if (root / "windows" / "launcher.py").exists():
     pass
@@ -12,9 +11,6 @@ else:
 
 launcher = root / "windows" / "launcher.py"
 
-# Windows no longer embeds WebView2. The Flask UI is rendered by the installed
-# system browser in app mode, so no WebView2 hidden imports or runtime hook are
-# needed in the executable.
 a = Analysis(
     [str(launcher)],
     pathex=[str(root), str(root / "windows")],
@@ -24,11 +20,16 @@ a = Analysis(
         (str(root / "templates"), "templates"),
         (str(root / "static"), "static"),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        "webview",
+        "webview.platforms.edgechromium",
+        "webview.platforms.winforms",
+        "clr",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3", "webview"],
+    excludes=["android", "PyQt5", "PyQt6", "PySide2", "PySide6", "cefpython3"],
     noarchive=False,
 )
 
