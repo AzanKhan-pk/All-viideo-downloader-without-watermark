@@ -1,5 +1,6 @@
 import os
 from core_app import app
+import runtime_patches  # safe URL-aware extractor and Windows download defaults
 import media_features  # registers TikTok/Pinterest media routes
 import location_features  # registers native download-location routes
 
