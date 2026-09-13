@@ -9,11 +9,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
-from flask import jsonify, request
+from flask import jsonify, request, send_file
 
 from core_app import (
     app,
     TEMP_DIR,
+    DOWNLOAD_DIR,
     extractor_options,
     jobs,
     jobs_lock,
@@ -210,11 +211,11 @@ def _download_image_list(job_id, source_url, image_list):
             target = folder / f"{index:03d}{ext}"
             shutil.move(str(temp), str(target))
             final_paths.append(target)
-        first = final_paths[0]
         size = sum(p.stat().st_size for p in final_paths)
+        first_relative = f"{folder.name}/{final_paths[0].name}"
         update_job(job_id, status="completed", percentage=100, downloaded_bytes=size,
-                   total_bytes=size, filesize=size, filename=str(folder.name),
-                   download_url=f"/api/file/{first.name}?folder={folder.name}",
+                   total_bytes=size, filesize=size, filename=folder.name,
+                   download_url=f"/api/special-file/{first_relative}",
                    elapsed=max(time.time() - started_at, 0.001), eta=0,
                    finished_at=time.time(), worker_running=False)
     except Exception as error:
@@ -243,6 +244,22 @@ def _allowed_special_url(url):
             or domain == "pinterest.com" or domain.endswith(".pinterest.com")
             or domain.endswith(".pinterest.co.uk") or domain.endswith(".pinterest.de")
             or domain.endswith(".pinterest.fr"))
+
+
+@app.post("/api/special-file/<path:relative>")
+def _special_file_post(relative):
+    return _special_file(relative)
+
+
+@app.get("/api/special-file/<path:relative>")
+def _special_file(relative):
+    base = Path(DOWNLOAD_DIR).resolve()
+    target = (base / relative).resolve()
+    if target != base and base not in target.parents:
+        return jsonify({"error": "Invalid file path."}), 400
+    if not target.is_file():
+        return jsonify({"error": "File was not found."}), 404
+    return send_file(target, as_attachment=True, download_name=target.name)
 
 
 @app.post("/api/media-preview")
@@ -287,12 +304,7 @@ def special_download():
         safe_items = [x for x in items if isinstance(x, dict) and str(x.get("url") or "").startswith(("http://", "https://"))][:40]
         if not safe_items:
             return jsonify({"error": "No valid selected pictures were received."}), 400
-        with yt_dlp.YoutubeDL(_options(url)) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-                update_job(job_id, title=info.get("title") or "Pictures")
-            except Exception:
-                update_job(job_id, title="Pictures")
+        update_job(job_id, title="Pictures")
         threading.Thread(target=_download_image_list, args=(job_id, url, safe_items), daemon=True).start()
     elif kind == "image":
         threading.Thread(target=_image_worker, args=(job_id, url), daemon=True).start()
