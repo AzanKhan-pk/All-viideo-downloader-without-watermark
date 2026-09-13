@@ -12,7 +12,7 @@
 (() => {
   const urlInput=document.getElementById('url'), fetchButton=document.getElementById('fetch'), result=document.getElementById('result'), status=document.getElementById('status'), qualities=document.querySelector('.qualities');
   if(!urlInput||!fetchButton||!result||!status||!qualities)return;
-  const specialDomain=value=>{try{const host=new URL(value).hostname.toLowerCase().replace(/^www\./,'');return host==='tiktok.com'||host.endsWith('.tiktok.com')||host==='pinterest.com'||host.endsWith('.pinterest.com')||host.endsWith('.pinterest.co.uk')||host.endsWith('.pinterest.de')||host.endsWith('.pinterest.fr')}catch(_){return false}};
+  const specialDomain=value=>{try{const host=new URL(value).hostname.toLowerCase().replace(/^www\./,'');return host==='tiktok.com'||host.endsWith('.tiktok.com')||host==='pinterest.com'||host.endsWith('.pinterest.com')||host.endsWith('.pinterest.co.uk')||host.endsWith('.pinterest.de')||host.endsWith('.pinterest.fr')||host==='pin.it'}catch(_){return false}};
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
   if(!document.getElementById('compactLocation')){
