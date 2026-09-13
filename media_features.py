@@ -1,8 +1,10 @@
 import shutil
+import subprocess
 import threading
 import time
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -64,14 +66,66 @@ def _extract_info(url):
         return _fallback_info(url)
 
 
+def _download_direct(url, destination, source_url, extra_headers=None):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        "Referer": source_url,
+    }
+    for key, value in (extra_headers or {}).items():
+        if key and value:
+            headers[str(key)] = str(value)
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=90) as response, open(destination, "wb") as output:
+        shutil.copyfileobj(response, output)
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("The media server returned an empty file.")
+
+
 def _choose_video_format(info, quality):
     limit = int(quality)
     formats = info.get("formats") or []
     if formats:
-        # Never pin a site-specific format id. TikTok/Pinterest frequently expose
-        # changing ids; let yt-dlp choose the best compatible pair at download time.
         return f"bv*[height<={limit}]+ba/b[height<={limit}]/bv+ba/b", True
     raise RuntimeError("No downloadable video formats were found for this post.")
+
+
+def _special_direct_video_worker(job_id, url, info, quality):
+    job_dir = TEMP_DIR / f"special_{job_id}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    started_at = time.time()
+    try:
+        title = info.get("title") or "video"
+        formats = info.get("formats") or []
+        direct_video = next((f for f in formats if f.get("url")), None)
+        if not direct_video:
+            raise RuntimeError("No direct video stream was returned by the site.")
+        update_job(job_id, title=title, source_height=direct_video.get("height"), status="downloading")
+        video_temp = job_dir / "video.mp4"
+        _download_direct(direct_video["url"], video_temp, url, direct_video.get("http_headers") or info.get("headers"))
+
+        audio_url = info.get("audio_url")
+        final = unique_output_path(title, "mp4")
+        if audio_url and ffmpeg_available():
+            audio_temp = job_dir / "audio.m4a"
+            try:
+                _download_direct(audio_url, audio_temp, url, info.get("headers"))
+                command = ["ffmpeg", "-y", "-i", str(video_temp), "-i", str(audio_temp),
+                           "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+                           "-movflags", "+faststart", str(final)]
+                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        text=True, encoding="utf-8", errors="replace")
+                if result.returncode != 0 or not final.exists() or final.stat().st_size <= 0:
+                    shutil.copy2(video_temp, final)
+            except Exception:
+                shutil.copy2(video_temp, final)
+        else:
+            shutil.copy2(video_temp, final)
+
+        _finish_job(job_id, final, started_at)
+    except Exception as error:
+        update_job(job_id, status="error", error=str(error), worker_running=False, finished_at=time.time(), conversion=False)
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 def _special_video_worker(job_id, url, quality):
@@ -85,6 +139,11 @@ def _special_video_worker(job_id, url, quality):
             raise RuntimeError("The site did not return usable media data.")
         title = info.get("title") or "video"
         update_job(job_id, title=title, source_height=info.get("height"))
+
+        if info.get("_fallback_direct"):
+            shutil.rmtree(job_dir, ignore_errors=True)
+            _special_direct_video_worker(job_id, url, info, quality)
+            return
 
         selector, needs_merge = _choose_video_format(info, quality)
         options = _options(url)
@@ -107,29 +166,16 @@ def _special_video_worker(job_id, url, quality):
             raise RuntimeError("Download completed, but no final video file was produced.")
         mp4s = [p for p in files if p.suffix.lower() == ".mp4"]
         output = max(mp4s or files, key=lambda p: p.stat().st_size)
-        if output.stat().st_size <= 0:
-            raise RuntimeError("The downloaded video file is empty.")
         final_path = unique_output_path(title, "mp4")
         shutil.move(str(output), str(final_path))
         _finish_job(job_id, final_path, started_at)
     except Exception as error:
-        # A direct media URL from the fallback parser is the final recovery path.
         try:
             fallback = _fallback_info(url)
-            direct = ((fallback or {}).get("formats") or [{}])[0].get("url")
-            if direct:
-                headers = ((fallback or {}).get("formats") or [{}])[0].get("http_headers") or {}
-                temp = job_dir / "direct.mp4"
-                req_headers = {"User-Agent": headers.get("User-Agent", "Mozilla/5.0"), "Referer": url}
-                req = urllib.request.Request(direct, headers=req_headers)
-                with urllib.request.urlopen(req, timeout=60) as response, open(temp, "wb") as out:
-                    shutil.copyfileobj(response, out)
-                if temp.stat().st_size > 0:
-                    title = (fallback or {}).get("title") or "video"
-                    final_path = unique_output_path(title, "mp4")
-                    shutil.move(str(temp), str(final_path))
-                    _finish_job(job_id, final_path, started_at)
-                    return
+            if fallback and fallback.get("formats"):
+                shutil.rmtree(job_dir, ignore_errors=True)
+                _special_direct_video_worker(job_id, url, fallback, quality)
+                return
         except Exception:
             pass
         update_job(job_id, status="error", error=str(error), worker_running=False, finished_at=time.time(), conversion=False)
@@ -187,6 +233,8 @@ def _download_image(url, source_url, destination, extra_headers=None):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=45) as response, open(destination, "wb") as output:
         shutil.copyfileobj(response, output)
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("The image server returned an empty file.")
 
 
 def _download_image_list(job_id, source_url, image_list):
@@ -217,6 +265,7 @@ def _download_image_list(job_id, source_url, image_list):
                        downloaded_bytes=sum(p.stat().st_size for p in saved), total_bytes=0)
         if not saved:
             raise RuntimeError("No selected picture could be downloaded from this post.")
+
         title = "Pictures"
         with jobs_lock:
             title = jobs.get(job_id, {}).get("title") or title
@@ -227,13 +276,17 @@ def _download_image_list(job_id, source_url, image_list):
             target = folder / f"{index:03d}{temp.suffix or '.jpg'}"
             shutil.move(str(temp), str(target))
             final_paths.append(target)
-        size = sum(p.stat().st_size for p in final_paths)
-        first_relative = f"{folder.name}/{final_paths[0].name}"
+
+        zip_path = folder.with_suffix(".zip")
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in final_paths:
+                archive.write(path, arcname=path.name)
+        size = zip_path.stat().st_size
         update_job(job_id, status="completed", percentage=100, downloaded_bytes=size,
-                   total_bytes=size, filesize=size, filename=folder.name,
-                   download_url=f"/api/special-file/{first_relative}",
-                   elapsed=max(time.time() - started_at, 0.001), eta=0,
-                   finished_at=time.time(), worker_running=False)
+                   total_bytes=size, filesize=size, filename=zip_path.name,
+                   download_url=f"/api/special-file/{zip_path.name}",
+                   elapsed=max(time.time() - started_at, 0.001), speed=size / max(time.time() - started_at, 0.001),
+                   eta=0, finished_at=time.time(), worker_running=False)
     except Exception as error:
         update_job(job_id, status="error", error=str(error), worker_running=False, finished_at=time.time())
     finally:
@@ -270,16 +323,13 @@ def _audio_worker(job_id, url):
         title = info.get("title") or "audio"
         direct = info.get("audio_url")
         if direct:
-            headers = (info.get("headers") or {}).copy()
-            req = urllib.request.Request(direct, headers={"User-Agent": headers.get("User-Agent", "Mozilla/5.0"), "Referer": url})
             source = job_dir / "source_audio"
-            with urllib.request.urlopen(req, timeout=60) as response, open(source, "wb") as out:
-                shutil.copyfileobj(response, out)
+            _download_direct(direct, source, url, info.get("headers"))
             if not ffmpeg_available():
                 raise RuntimeError("FFmpeg is required to create the MP3 audio file.")
             final = unique_output_path(title, "mp3")
             command = ["ffmpeg", "-y", "-i", str(source), "-vn", "-c:a", "libmp3lame", "-b:a", "192k", str(final)]
-            result = __import__("subprocess").run(command, stdout=__import__("subprocess").PIPE, stderr=__import__("subprocess").PIPE, text=True, encoding="utf-8", errors="replace")
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
             if result.returncode != 0 or not final.exists() or final.stat().st_size <= 0:
                 raise RuntimeError("Audio conversion failed.")
             _finish_job(job_id, final, started_at)
