@@ -1,148 +1,45 @@
 {% include 'core_index.html' %}
 
 <style>
-/* Integrated public-media gallery and compact location controls. */
 .social-gallery{margin-top:16px;padding:14px;border:1px solid rgba(124,58,237,.22);border-radius:15px;background:rgba(124,58,237,.055)}
-.social-gallery-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}
-.social-gallery-title{font-size:13px;font-weight:850}.social-gallery-count{font-size:11px;color:#9d9dad}
-.social-gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;max-height:360px;overflow:auto;padding-right:2px}
-.social-image-card{position:relative;display:block;min-width:0;padding:0;border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden;background:#0b0b12;cursor:pointer}
-.social-image-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}.social-image-card input{position:absolute;top:7px;left:7px;width:18px;height:18px;accent-color:#7c3aed;z-index:2}
-.social-image-card.selected{border-color:rgba(250,204,21,.7);box-shadow:0 0 0 2px rgba(250,204,21,.12)}
-.social-gallery-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.social-gallery-actions .chip{min-height:38px}.social-gallery-actions .primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}
+.social-gallery-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}.social-gallery-title{font-size:13px;font-weight:850}.social-gallery-count{font-size:11px;color:#9d9dad}
+.social-gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;max-height:360px;overflow:auto;padding-right:2px}.social-image-card{position:relative;display:block;min-width:0;padding:0;border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden;background:#0b0b12;cursor:pointer}.social-image-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}.social-image-card input{position:absolute;top:7px;left:7px;width:18px;height:18px;accent-color:#7c3aed;z-index:2}.social-image-card.selected{border-color:rgba(250,204,21,.7);box-shadow:0 0 0 2px rgba(250,204,21,.12)}.social-gallery-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.social-gallery-actions .chip{min-height:38px}.social-gallery-actions .primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}
 .compact-location{display:flex;gap:8px;align-items:center;margin-left:auto}.compact-location .chip{min-height:40px;white-space:nowrap}.compact-location .browse{border-color:rgba(124,58,237,.42);color:#cdbdff}.compact-location .open{border-color:rgba(250,204,21,.30);color:#facc15}
 @media(max-width:760px){.social-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.compact-location{width:100%;margin-left:0}.compact-location .chip{flex:1}}
 </style>
 
 <script>
 (() => {
-  const urlInput = document.getElementById('url');
-  const fetchButton = document.getElementById('fetch');
-  const result = document.getElementById('result');
-  const status = document.getElementById('status');
-  const qualities = document.querySelector('.qualities');
-  if (!urlInput || !fetchButton || !result || !status || !qualities) return;
+  const urlInput=document.getElementById('url'), fetchButton=document.getElementById('fetch'), result=document.getElementById('result'), status=document.getElementById('status'), qualities=document.querySelector('.qualities');
+  if(!urlInput||!fetchButton||!result||!status||!qualities)return;
+  const specialDomain=value=>{try{const host=new URL(value).hostname.toLowerCase().replace(/^www\./,'');return host==='tiktok.com'||host.endsWith('.tiktok.com')||host==='pinterest.com'||host.endsWith('.pinterest.com')||host.endsWith('.pinterest.co.uk')||host.endsWith('.pinterest.de')||host.endsWith('.pinterest.fr')}catch(_){return false}};
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
-  const specialDomain = value => {
-    try {
-      const host = new URL(value).hostname.toLowerCase().replace(/^www\./,'');
-      return host === 'tiktok.com' || host.endsWith('.tiktok.com') || host === 'pinterest.com' || host.endsWith('.pinterest.com') || host.endsWith('.pinterest.co.uk') || host.endsWith('.pinterest.de') || host.endsWith('.pinterest.fr');
-    } catch (_) { return false; }
-  };
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-
-  function installLocationButtons(){
-    if (document.getElementById('compactLocation')) return;
-    const wrap=document.createElement('div'); wrap.id='compactLocation'; wrap.className='compact-location';
-    wrap.innerHTML='<button class="chip browse" id="compactBrowse" type="button">📍 Browse Location</button><button class="chip open" id="compactOpen" type="button">📂 Open Folder</button>';
-    qualities.appendChild(wrap);
-    const call=async(endpoint,button)=>{
-      button.disabled=true;
-      try{
-        const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store'}); const d=await r.json();
-        if(!r.ok) throw new Error(d.error||'Unable to access the download folder.');
-        status.textContent=endpoint.includes('/browse')?(d.cancelled?'Download location unchanged.':`Download location: ${d.path}`):`Opened download folder: ${d.path}`;
-      }catch(e){status.textContent=e.message||'Unable to access the download folder.';}finally{button.disabled=false;}
-    };
-    wrap.querySelector('#compactBrowse').onclick=()=>call('/api/location/browse',wrap.querySelector('#compactBrowse'));
-    wrap.querySelector('#compactOpen').onclick=()=>call('/api/location/open',wrap.querySelector('#compactOpen'));
+  if(!document.getElementById('compactLocation')){
+    const wrap=document.createElement('div');wrap.id='compactLocation';wrap.className='compact-location';wrap.innerHTML='<button class="chip browse" id="compactBrowse" type="button">📍 Browse Location</button><button class="chip open" id="compactOpen" type="button">📂 Open Folder</button>';qualities.appendChild(wrap);
+    const call=async(endpoint,button)=>{button.disabled=true;try{const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to access the download folder.');status.textContent=endpoint.includes('/browse')?(d.cancelled?'Download location unchanged.':`Download location: ${d.path}`):`Opened download folder: ${d.path}`;}catch(e){status.textContent=e.message||'Unable to access the download folder.'}finally{button.disabled=false}};
+    wrap.querySelector('#compactBrowse').onclick=()=>call('/api/location/browse',wrap.querySelector('#compactBrowse'));wrap.querySelector('#compactOpen').onclick=()=>call('/api/location/open',wrap.querySelector('#compactOpen'));
   }
-  installLocationButtons();
 
-  async function pollSpecial(jobId, label){
-    for(let i=0;i<900;i++){
-      await new Promise(r=>setTimeout(r,500));
-      const response=await fetch('/api/download/'+encodeURIComponent(jobId),{cache:'no-store'});
-      const job=await response.json();
-      const pct=Math.round(Number(job.percentage||0));
-      status.textContent=`${label}${pct?` — ${pct}%`:''}`;
-      if(job.status==='completed'){
-        if(job.download_url){
-          const link=document.createElement('a'); link.href=job.download_url; link.download=job.filename||'download'; link.style.display='none'; document.body.appendChild(link); link.click(); link.remove();
-        }
-        status.textContent='Download completed.'; return job;
-      }
-      if(job.status==='error'||job.status==='cancelled') throw new Error(job.error||'Download failed.');
-    }
-    throw new Error('The download is taking too long. Please try again.');
-  }
+  async function pollSpecial(jobId,label){for(let i=0;i<900;i++){await new Promise(r=>setTimeout(r,500));const response=await fetch('/api/download/'+encodeURIComponent(jobId),{cache:'no-store'});const job=await response.json();const pct=Math.round(Number(job.percentage||0));status.textContent=`${label}${pct?` — ${pct}%`:''}`;if(job.status==='completed'){if(job.download_url){const link=document.createElement('a');link.href=job.download_url;link.download=job.filename||'download';link.style.display='none';document.body.appendChild(link);link.click();link.remove()}status.textContent='Download completed.';return job}if(job.status==='error'||job.status==='cancelled')throw new Error(job.error||'Download failed.')}throw new Error('The download is taking too long. Please try again.')}
+
+  function activeMode(){return document.querySelector('.modes [data-mode].active')?.dataset.mode||'video'}
+  function activeQuality(){return Number(document.querySelector('.qualities [data-q].active')?.dataset.q||2160)}
 
   function renderGallery(data){
-    const images=(data.images||[]).filter(x=>x&&x.url).slice(0,40);
-    if(!images.length) return false;
-    const photoMode=Boolean(data.is_photo);
-    result.innerHTML=`<div class="social-gallery"><div class="social-gallery-head"><div class="social-gallery-title">🖼️ ${esc(data.title||'Pictures')}</div><div class="social-gallery-count">${images.length} image${images.length===1?'':'s'} found</div></div><div class="social-gallery-grid">${images.map((img,i)=>`<label class="social-image-card selected"><input type="checkbox" data-social-index="${i}" checked><img src="${esc(img.url)}" alt="Image ${i+1}" loading="lazy"></label>`).join('')}</div><div class="social-gallery-actions"><button class="chip" id="socialSelectAll" type="button">Select all</button><button class="chip" id="socialClearAll" type="button">Clear</button><button class="chip primary" id="socialDownloadSelected" type="button">⬇ Download selected</button>${photoMode?'':'<button class="chip" id="socialUseVideo" type="button">🎬 Download video</button>'}</div></div>`;
-    result.hidden=false;
-    const cards=[...result.querySelectorAll('.social-image-card')];
-    cards.forEach(card=>card.addEventListener('click',e=>{if(e.target.matches('input')) return; const cb=card.querySelector('input'); cb.checked=!cb.checked; card.classList.toggle('selected',cb.checked);}));
-    result.querySelector('#socialSelectAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=true;c.classList.add('selected');});
-    result.querySelector('#socialClearAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=false;c.classList.remove('selected');});
-    result.querySelector('#socialDownloadSelected').onclick=async()=>{
-      const selected=[...result.querySelectorAll('[data-social-index]:checked')].map(cb=>images[Number(cb.dataset.socialIndex)]);
-      if(!selected.length){status.textContent='Select at least one picture first.';return;}
-      const button=result.querySelector('#socialDownloadSelected');button.disabled=true;status.textContent='Downloading selected pictures…';
-      try{const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim(),kind:'images',images:selected})});const d=await r.json();if(!r.ok||!d.job_id)throw new Error(d.error||'Could not start picture download.');await pollSpecial(d.job_id,'Downloading pictures');}catch(e){status.textContent=e.message||'Picture download failed.';}finally{button.disabled=false;}
-    };
-    const videoButton=result.querySelector('#socialUseVideo');
-    if(videoButton) videoButton.onclick=()=>smartVideoDownload();
-    return true;
+    const images=(data.images||[]).filter(x=>x&&x.url).slice(0,40);if(!images.length)return false;
+    result.innerHTML=`<div class="social-gallery"><div class="social-gallery-head"><div class="social-gallery-title">🖼️ ${esc(data.title||'Pictures')}</div><div class="social-gallery-count">${images.length} image${images.length===1?'':'s'} found</div></div><div class="social-gallery-grid">${images.map((img,i)=>`<label class="social-image-card selected"><input type="checkbox" data-social-index="${i}" checked><img src="${esc(img.url)}" alt="Image ${i+1}" loading="lazy"></label>`).join('')}</div><div class="social-gallery-actions"><button class="chip" id="socialSelectAll" type="button">Select all</button><button class="chip" id="socialClearAll" type="button">Clear</button><button class="chip primary" id="socialDownloadSelected" type="button">⬇ Download selected</button>${data.is_photo?'':'<button class="chip" id="socialUseVideo" type="button">🎬 Download video</button>'}</div></div>`;result.hidden=false;
+    const cards=[...result.querySelectorAll('.social-image-card')];cards.forEach(card=>card.addEventListener('click',e=>{if(e.target.matches('input')){card.classList.toggle('selected',e.target.checked);return}const cb=card.querySelector('input');cb.checked=!cb.checked;card.classList.toggle('selected',cb.checked)}));
+    result.querySelector('#socialSelectAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=true;c.classList.add('selected')});result.querySelector('#socialClearAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=false;c.classList.remove('selected')});
+    result.querySelector('#socialDownloadSelected').onclick=async()=>{const selected=[...result.querySelectorAll('[data-social-index]:checked')].map(cb=>images[Number(cb.dataset.socialIndex)]);if(!selected.length){status.textContent='Select at least one picture first.';return}const button=result.querySelector('#socialDownloadSelected');button.disabled=true;status.textContent='Downloading selected pictures…';try{const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim(),kind:'images',images:selected})});const d=await r.json();if(!r.ok||!d.job_id)throw new Error(d.error||'Could not start picture download.');await pollSpecial(d.job_id,'Downloading pictures')}catch(e){status.textContent=e.message||'Picture download failed.'}finally{button.disabled=false}};
+    const videoButton=result.querySelector('#socialUseVideo');if(videoButton)videoButton.onclick=()=>smartVideoDownload();return true;
   }
 
-  async function specialPreview(){
-    const url=urlInput.value.trim();
-    const response=await fetch('/api/media-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
-    const data=await response.json();
-    if(!response.ok) throw new Error(data.error||'Unable to read this public media URL.');
-    return data;
-  }
+  async function specialPreview(){const response=await fetch('/api/media-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim()})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to read this public media URL.');return data}
+  async function smartVideoDownload(){const url=urlInput.value.trim();if(!specialDomain(url))return window.startDownload();const button=document.getElementById('downloadBtn');if(button)button.disabled=true;try{const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,kind:'video',quality:activeQuality()})});const d=await r.json();if(!r.ok||!d.job_id)throw new Error(d.error||'Could not start the video download.');await pollSpecial(d.job_id,'Downloading video + audio')}catch(e){status.textContent=e.message||'Video download failed.'}finally{if(button)button.disabled=false}}
+  function replaceDownloadButtonForSpecial(){const old=document.getElementById('downloadBtn');if(!old||!specialDomain(urlInput.value.trim()))return;const fresh=old.cloneNode(true);old.replaceWith(fresh);fresh.addEventListener('click',()=>activeMode()==='audio'?window.startDownload():smartVideoDownload())}
 
-  async function smartVideoDownload(){
-    const url=urlInput.value.trim();
-    if(!specialDomain(url)){return window.startDownload();}
-    const button=document.getElementById('downloadBtn');
-    if(button) button.disabled=true;
-    try{
-      const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,kind:'video',quality:Number(window.currentQuality||2160)})});
-      const d=await r.json(); if(!r.ok||!d.job_id) throw new Error(d.error||'Could not start the video download.');
-      await pollSpecial(d.job_id,'Downloading video + audio');
-    }catch(e){status.textContent=e.message||'Video download failed.';}
-    finally{if(button) button.disabled=false;}
-  }
-
-  function replaceDownloadButtonForSpecial(){
-    const old=document.getElementById('downloadBtn');
-    if(!old || !specialDomain(urlInput.value.trim())) return;
-    const fresh=old.cloneNode(true); old.replaceWith(fresh);
-    fresh.addEventListener('click',()=>{
-      if(String(window.currentMode||'video')==='audio') window.startDownload();
-      else smartVideoDownload();
-    });
-  }
-
-  const originalFetch=window.fetchMedia;
-  const originalFetchButton=fetchButton;
-  const replacement=originalFetchButton.cloneNode(true); originalFetchButton.replaceWith(replacement);
-  replacement.addEventListener('click',async()=>{
-    const url=urlInput.value.trim();
-    if(!url){return originalFetch();}
-    if(!specialDomain(url)){return originalFetch();}
-    replacement.disabled=true;replacement.textContent='Reading…';result.hidden=true;status.textContent='Checking TikTok/Pinterest media…';
-    try{
-      const preview=await specialPreview();
-      if(preview.is_photo && renderGallery(preview)){
-        status.textContent='Select the pictures you want to download.';
-      }else{
-        await originalFetch();
-        setTimeout(replaceDownloadButtonForSpecial,0);
-      }
-    }catch(e){status.textContent=e.message||'Unable to read this media URL.';}
-    finally{replacement.disabled=false;replacement.textContent='Fetch Media';}
-  });
-
-  urlInput.addEventListener('keydown',event=>{
-    if(event.key==='Enter' && specialDomain(urlInput.value.trim())){
-      event.preventDefault();event.stopImmediatePropagation();replacement.click();
-    }
-  },true);
+  const originalFetch=window.fetchMedia;const replacement=fetchButton.cloneNode(true);fetchButton.replaceWith(replacement);replacement.addEventListener('click',async()=>{const url=urlInput.value.trim();if(!url)return originalFetch();if(!specialDomain(url))return originalFetch();replacement.disabled=true;replacement.textContent='Reading…';result.hidden=true;status.textContent='Checking TikTok/Pinterest media…';try{const preview=await specialPreview();if(preview.is_photo&&renderGallery(preview)){status.textContent='Select the pictures you want to download.'}else{await originalFetch();setTimeout(replaceDownloadButtonForSpecial,0)}}catch(e){status.textContent=e.message||'Unable to read this media URL.'}finally{replacement.disabled=false;replacement.textContent='Fetch Media'}});
+  urlInput.addEventListener('keydown',event=>{if(event.key==='Enter'&&specialDomain(urlInput.value.trim())){event.preventDefault();event.stopImmediatePropagation();replacement.click()}},true);
 })();
 </script>
