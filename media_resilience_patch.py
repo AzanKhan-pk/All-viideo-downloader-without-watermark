@@ -51,22 +51,60 @@ def _download_hls(url, destination, source_url, extra_headers=None):
         raise RuntimeError("The streaming media could not be read. " + result.stderr[-900:])
 
 
+def _probe_height(path):
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=height", "-of", "csv=p=0", str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        value = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+        return int(value) if value.isdigit() else 0
+    except Exception:
+        return 0
+
+
+def _maybe_apply_requested_quality(destination):
+    destination = Path(destination)
+    # media_quality_patch uses this exact temporary filename for fallback videos.
+    if destination.name.lower() != "source.mp4":
+        return
+    parent = destination.parent.name
+    if not parent.startswith("special_"):
+        return
+    job_id = parent[len("special_"):]
+    job = core_app.get_job(job_id) or {}
+    target = int(job.get("target_height") or job.get("quality") or 0)
+    if target <= 0:
+        return
+    source_height = _probe_height(destination)
+    if source_height <= 0 or source_height <= target:
+        return
+    converted = destination.parent / "requested-quality.mp4"
+    _safe_resize(destination, converted, target, job_id)
+    shutil.move(str(converted), str(destination))
+    core_app.update_job(job_id, source_height=source_height, target_height=target, conversion=False)
+
+
 def _safe_download_direct(url, destination, source_url, extra_headers=None):
     url = str(url or "").strip()
     if _is_hls(url):
-        return _download_hls(url, destination, source_url, extra_headers)
-    req = urllib.request.Request(url, headers=_headers(source_url, extra_headers))
-    with urllib.request.urlopen(req, timeout=90) as response:
-        content_type = str(response.headers.get("Content-Type") or "").lower()
-        first = response.read(1024)
-        sample = first.lstrip().lower()
-        if "text/html" in content_type or sample.startswith(b"<!doctype html") or sample.startswith(b"<html"):
-            raise RuntimeError("The media server returned a webpage instead of the media file.")
-        with open(destination, "wb") as output:
-            output.write(first)
-            shutil.copyfileobj(response, output)
+        _download_hls(url, destination, source_url, extra_headers)
+    else:
+        req = urllib.request.Request(url, headers=_headers(source_url, extra_headers))
+        with urllib.request.urlopen(req, timeout=90) as response:
+            content_type = str(response.headers.get("Content-Type") or "").lower()
+            first = response.read(1024)
+            sample = first.lstrip().lower()
+            if "text/html" in content_type or sample.startswith(b"<!doctype html") or sample.startswith(b"<html"):
+                raise RuntimeError("The media server returned a webpage instead of the media file.")
+            with open(destination, "wb") as output:
+                output.write(first)
+                shutil.copyfileobj(response, output)
     if not Path(destination).exists() or Path(destination).stat().st_size <= 0:
         raise RuntimeError("The media server returned an empty file.")
+    _maybe_apply_requested_quality(destination)
 
 
 media_features._download_direct = _safe_download_direct
@@ -183,8 +221,6 @@ def _preview_json():
 core_app.app.view_functions["media_preview"] = _preview_json
 
 
-# API routes should never return Flask's default HTML error page. That HTML is what
-# the browser reports as "Unexpected token '<' / <!DOCTYPE ... is not valid JSON".
 @core_app.app.errorhandler(HTTPException)
 def _api_http_error(error):
     if request.path.startswith("/api/"):
