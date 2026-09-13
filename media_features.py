@@ -1,8 +1,6 @@
-import mimetypes
 import shutil
 import threading
 import time
-import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -11,10 +9,10 @@ from urllib.parse import urlparse
 import yt_dlp
 from flask import jsonify, request, send_file
 
+import core_app
 from core_app import (
     app,
     TEMP_DIR,
-    DOWNLOAD_DIR,
     extractor_options,
     jobs,
     jobs_lock,
@@ -246,14 +244,9 @@ def _allowed_special_url(url):
             or domain.endswith(".pinterest.fr"))
 
 
-@app.post("/api/special-file/<path:relative>")
-def _special_file_post(relative):
-    return _special_file(relative)
-
-
 @app.get("/api/special-file/<path:relative>")
 def _special_file(relative):
-    base = Path(DOWNLOAD_DIR).resolve()
+    base = Path(core_app.DOWNLOAD_DIR).resolve()
     target = (base / relative).resolve()
     if target != base and base not in target.parents:
         return jsonify({"error": "Invalid file path."}), 400
