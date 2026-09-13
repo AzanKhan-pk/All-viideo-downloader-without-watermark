@@ -109,4 +109,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "Persistent background downloads, restart/resume progress, in-page folder controls, removable download cards, file-in-folder actions, TikTok-focused extraction reliability, public image gallery with multi-select and separate image folders. Windows now uses the installed system browser in app mode instead of embedded WebView2, removing the WebView2 black-screen rendering path. Supports public media only and does not bypass DRM, private access, or restricted content."
+          gh release create "${FIXED_TAG}" release-android.apk release/All-Video-Downloader-Setup.exe --repo "$GITHUB_REPOSITORY" --title "Fixed media build ${FIXED_TAG}" --notes "TikTok/Pinterest extraction recovery, image multi-select, video+audio, audio-only mode, current yt-dlp, default Windows Downloads/Video downloader location, and a native pywebview Edge WebView2 application window that does not launch or depend on Google Chrome."
