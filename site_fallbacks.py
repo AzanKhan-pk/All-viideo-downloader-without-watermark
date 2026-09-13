@@ -16,11 +16,11 @@ UA = (
 )
 
 
-def _get(url, referer=None):
+def _get(url, referer=None, accept=None):
     headers = {
         "User-Agent": UA,
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": accept or "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     if referer:
         headers["Referer"] = referer
@@ -35,6 +35,14 @@ def _get(url, referer=None):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=25) as response:
         return response.read().decode("utf-8", "ignore"), response.geturl(), headers
+
+
+def _get_json(url, referer=None):
+    text, final_url, headers = _get(url, referer, "application/json,text/plain,*/*")
+    try:
+        return json.loads(text), final_url, headers
+    except Exception:
+        return None, final_url, headers
 
 
 def _script_json(html, script_id):
@@ -70,13 +78,35 @@ def _direct_url(value):
     if isinstance(value, str) and value.startswith("http"):
         return value
     if isinstance(value, dict):
-        for key in ("urlList", "url_list", "url", "src"):
+        for key in ("urlList", "url_list", "url", "src", "playAddr", "downloadAddr"):
             raw = value.get(key)
             values = raw if isinstance(raw, list) else [raw]
             for item in values:
                 if isinstance(item, str) and item.startswith("http"):
                     return item
     return None
+
+
+def _all_direct_urls(value):
+    found = []
+    seen = set()
+    for node in _walk(value):
+        if isinstance(node, str):
+            candidate = node
+            if candidate.startswith("http") and candidate not in seen:
+                seen.add(candidate)
+                found.append(candidate)
+            continue
+        if not isinstance(node, dict):
+            continue
+        for key in ("urlList", "url_list", "url", "src", "playAddr", "downloadAddr"):
+            raw = node.get(key)
+            values = raw if isinstance(raw, list) else [raw]
+            for item in values:
+                if isinstance(item, str) and item.startswith("http") and item not in seen:
+                    seen.add(item)
+                    found.append(item)
+    return found
 
 
 def _meta(html, key, attr="property"):
@@ -114,9 +144,29 @@ def _tiktok_item(data, video_id):
             if isinstance(candidate, dict) and str(candidate.get("id")) == str(video_id):
                 return candidate
     for item in _walk(data):
-        if isinstance(item, dict):
-            if str(item.get("id")) == str(video_id) and (item.get("video") or item.get("imagePost")):
+        if isinstance(item, dict) and str(item.get("id")) == str(video_id):
+            if item.get("video") or item.get("imagePost") or item.get("imagePostInfo"):
                 return item
+    return None
+
+
+def _tiktok_api_item(video_id):
+    api_url = f"https://www.tiktok.com/api/item/detail/?itemId={video_id}"
+    try:
+        data, _, _ = _get_json(api_url, "https://www.tiktok.com/")
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    item = _tiktok_item(data, video_id)
+    if item:
+        return item
+    for key in ("itemInfo", "itemStruct", "item", "data"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            candidate = value.get("itemStruct") if key == "itemInfo" else value
+            if isinstance(candidate, dict) and (candidate.get("video") or candidate.get("imagePost")):
+                return candidate
     return None
 
 
@@ -136,16 +186,26 @@ def tiktok(url):
     if item is None:
         data = _script_json(html, "SIGI_STATE")
         item = _tiktok_item(data, video_id) if data else None
+    if item is None:
+        # TikTok photo posts can expose no usable media in the page HTML.
+        # The public item-detail response is a second, read-only fallback.
+        item = _tiktok_api_item(video_id)
     if not item:
         return None
 
     image_urls = []
-    image_post = item.get("imagePost") or {}
-    image_values = image_post.get("images") or image_post.get("imageList") or image_post.get("image_list") or []
+    image_post = item.get("imagePost") or item.get("imagePostInfo") or {}
+    image_values = (
+        image_post.get("images")
+        or image_post.get("imageList")
+        or image_post.get("image_list")
+        or image_post.get("imageURLList")
+        or []
+    )
     for image in image_values:
         if not isinstance(image, dict):
             continue
-        value = image.get("imageURL") or image.get("imageUrl") or image.get("displayImage") or image
+        value = image.get("imageURL") or image.get("imageUrl") or image.get("displayImage") or image.get("originImage") or image
         candidate = _direct_url(value)
         if candidate and candidate not in image_urls:
             image_urls.append(candidate)
@@ -154,7 +214,7 @@ def tiktok(url):
         for node in _walk(item):
             if not isinstance(node, dict):
                 continue
-            value = node.get("imageURL") or node.get("imageUrl") or node.get("displayImage")
+            value = node.get("imageURL") or node.get("imageUrl") or node.get("displayImage") or node.get("originImage")
             candidate = _direct_url(value)
             if candidate and candidate not in image_urls:
                 image_urls.append(candidate)
@@ -179,7 +239,7 @@ def tiktok(url):
         result["formats"] = [{
             "format_id": "tiktok-direct", "url": video_url,
             "height": video.get("height") or 0, "ext": "mp4",
-            "vcodec": "h264", "acodec": "aac", "http_headers": headers,
+            "vcodec": "h264", "acodec": "none", "http_headers": headers,
         }]
         if audio_url:
             result["audio_url"] = audio_url
@@ -236,18 +296,68 @@ def _pin_images(pin):
 def _pin_videos(pin):
     videos = []
     seen = set()
+
+    def add(value, width=None, height=None, fmt=""):
+        if not isinstance(value, str) or not value.startswith("http") or value in seen:
+            return
+        low = value.lower()
+        context = str(fmt).lower()
+        if ".mp4" not in low and ".m3u8" not in low and "video" not in context and "hls" not in context:
+            return
+        seen.add(value)
+        videos.append({"url": value, "width": width, "height": height})
+
+    # This mirrors Pinterest's current public pin structures, including story pins.
     for node in _walk(pin):
         if not isinstance(node, dict):
             continue
-        for key in ("url", "src"):
+        video_list = node.get("video_list")
+        if isinstance(video_list, dict):
+            for fmt, item in video_list.items():
+                if isinstance(item, dict):
+                    add(item.get("url"), item.get("width"), item.get("height"), fmt)
+        for key in ("video_url", "videoUrl", "video_src", "videoSrc", "src"):
             value = node.get(key)
-            if not isinstance(value, str) or not value.startswith("http") or value in seen:
-                continue
-            context = " ".join(str(node.get(k, "")) for k in ("type", "mime_type", "format", "width", "height")).lower()
-            if ".mp4" in value.lower() or "video" in context:
-                seen.add(value)
-                videos.append({"url": value, "width": node.get("width"), "height": node.get("height")})
+            if isinstance(value, str):
+                add(value, node.get("width"), node.get("height"), node.get("type") or key)
     return videos
+
+
+def _pin_audio(pin):
+    candidates = []
+    seen = set()
+    audio_keys = {
+        "audio_url", "audioUrl", "audio_src", "audioSrc", "audio_source", "audioSource",
+        "music_url", "musicUrl", "sound_url", "soundUrl", "playUrl", "play_url",
+    }
+    for node in _walk(pin):
+        if not isinstance(node, dict):
+            continue
+        for key, value in node.items():
+            key_low = str(key).lower()
+            is_audio_key = key in audio_keys or "audio" in key_low or "music" in key_low
+            if isinstance(value, str) and value.startswith("http") and is_audio_key:
+                if value not in seen:
+                    seen.add(value)
+                    candidates.append(value)
+            elif isinstance(value, dict) and is_audio_key:
+                candidate = _direct_url(value)
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    candidates.append(candidate)
+            elif isinstance(value, list) and is_audio_key:
+                for item in value:
+                    candidate = _direct_url(item)
+                    if candidate and candidate not in seen:
+                        seen.add(candidate)
+                        candidates.append(candidate)
+        node_type = str(node.get("type") or node.get("mime_type") or "").lower()
+        if "audio" in node_type:
+            candidate = _direct_url(node)
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
+    return candidates[0] if candidates else None
 
 
 def pinterest(url):
@@ -276,7 +386,7 @@ def pinterest(url):
                 "type": "video", "title": f"Pinterest {pin_id}", "source_url": final_url,
                 "headers": headers, "_fallback_direct": True,
                 "formats": [{"format_id": "pinterest-og", "url": og_video, "height": 0,
-                              "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers}],
+                              "ext": "mp4", "vcodec": "h264", "acodec": "none", "http_headers": headers}],
                 "images": images,
             }
         if images:
@@ -288,14 +398,18 @@ def pinterest(url):
 
     images = _pin_images(pin)
     videos = _pin_videos(pin)
+    audio_url = _pin_audio(pin)
     title = pin.get("title") or pin.get("grid_title") or pin.get("description") or f"Pinterest {pin_id}"
     result = {"title": title, "source_url": final_url, "headers": headers, "_fallback_direct": True}
     if videos:
         result["type"] = "video"
         result["formats"] = [{
             "format_id": f"pin-direct-{i}", "url": v["url"], "height": v.get("height") or 0,
-            "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers,
+            "ext": "mp4" if ".m3u8" not in v["url"].lower() else "mp4",
+            "vcodec": "h264", "acodec": "none", "http_headers": headers,
         } for i, v in enumerate(videos)]
+        if audio_url:
+            result["audio_url"] = audio_url
         if images:
             result["images"] = images
         return result
