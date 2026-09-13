@@ -1,5 +1,5 @@
 Flask>=3.1
-yt-dlp==2026.8.30.232658
+yt-dlp==2026.8.30.232658.dev0
 curl_cffi==0.15.0
 pywebview>=6.1,<7
 pyinstaller>=6.16
