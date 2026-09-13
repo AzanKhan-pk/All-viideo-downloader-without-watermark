@@ -26,6 +26,10 @@ class PauseDownload(Exception):
     pass
 
 
+# =========================================================
+# BASIC HELPERS
+# =========================================================
+
 def safe_filename(name):
     name = name or "video"
     name = re.sub(r'[\\/:*?"<>|]+', "_", name)
@@ -101,6 +105,9 @@ def extractor_options():
     }
 
 
+# =========================================================
+# JOBS
+# =========================================================
 def create_job(url, mode, quality):
     job_id = uuid.uuid4().hex
     job = {
@@ -129,6 +136,9 @@ def get_job(job_id):
         return dict(jobs[job_id])
 
 
+# =========================================================
+# FORMAT ANALYSIS
+# =========================================================
 def get_format_size(fmt):
     return fmt.get("filesize") or fmt.get("filesize_approx") or 0
 
@@ -151,8 +161,9 @@ def get_video_formats(info):
 def get_available_heights(info):
     heights = set()
     for fmt in get_video_formats(info):
-        if fmt.get("height"):
-            heights.add(int(fmt["height"]))
+        height = fmt.get("height")
+        if height:
+            heights.add(int(height))
     return sorted(heights, reverse=True)
 
 
@@ -161,10 +172,13 @@ def choose_source_format(info, target_height):
     if not formats:
         return None
     heights = sorted({int(f["height"]) for f in formats if f.get("height")})
-    if not heights or target_height > max(heights):
+    if not heights:
         return None
-    suitable = [h for h in heights if h >= target_height]
-    chosen_height = min(suitable) if suitable else max(heights)
+    max_height = max(heights)
+    if target_height > max_height:
+        return None
+    suitable_heights = [h for h in heights if h >= target_height]
+    chosen_height = min(suitable_heights) if suitable_heights else max_height
     candidates = [f for f in formats if int(f.get("height")) == chosen_height]
     candidates.sort(key=lambda f: (1 if get_format_size(f) else 0, f.get("tbr") or 0, f.get("fps") or 0), reverse=True)
     return candidates[0]
@@ -183,6 +197,9 @@ def choose_audio_format(info):
     return audio_formats[0]
 
 
+# =========================================================
+# PROGRESS
+# =========================================================
 def make_progress_hook(job_id):
     def hook(data):
         job = get_job(job_id)
@@ -198,7 +215,9 @@ def make_progress_hook(job_id):
             total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
             speed = data.get("speed") or 0
             eta = data.get("eta")
-            percentage = max(0, min(100, (downloaded / total) * 100)) if total > 0 else 0
+            percentage = 0
+            if total > 0:
+                percentage = max(0, min(100, (downloaded / total) * 100))
             started_at = job.get("started_at") or time.time()
             elapsed = time.time() - started_at
             update_job(job_id, status="downloading", downloaded_bytes=downloaded, total_bytes=total,
@@ -211,6 +230,9 @@ def make_progress_hook(job_id):
     return hook
 
 
+# =========================================================
+# FINAL FILE NAME
+# =========================================================
 def unique_output_path(title, extension):
     clean_title = safe_filename(title)
     extension = extension.lstrip(".")
@@ -225,13 +247,14 @@ def unique_output_path(title, extension):
         counter += 1
 
 
+# =========================================================
+# FFMPEG RESIZE
+# =========================================================
 def resize_video(input_file, output_file, target_height, job_id):
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg is required for quality conversion.")
     update_job(job_id, status="converting", conversion=True, percentage=0)
-    # Never upscale: selected quality is the maximum output height.
-    # When the source is larger, the result is exactly the requested height.
-    scale_filter = f"scale=-2:min({int(target_height)},ih)"
+    scale_filter = f"scale=-2:{int(target_height)}"
     command = ["ffmpeg", "-y", "-i", str(input_file), "-vf", scale_filter,
                "-c:v", "libx264", "-crf", "28", "-preset", "medium",
                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output_file)]
@@ -256,113 +279,275 @@ def download_worker(job_id, url, mode, quality):
         update_job(job_id, title=title)
         if mode == "audio":
             format_selector = "bestaudio/best"
-            options = extractor_options()
-            options.update({"format": format_selector, "outtmpl": str(job_dir / "%(title)s.%(ext)s"),
-                            "progress_hooks": [make_progress_hook(job_id)], "postprocessors": [
-                                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]})
-            with yt_dlp.YoutubeDL(options) as ydl:
-                downloaded = ydl.extract_info(url, download=True)
-            files = [p for p in job_dir.iterdir() if p.is_file() and not p.name.endswith(".part")]
-            if not files:
-                raise RuntimeError("No audio file was produced.")
-            output = max(files, key=lambda p: p.stat().st_size)
-            final = unique_output_path(downloaded.get("title") or title, "mp3")
-            shutil.move(str(output), str(final))
-            size = final.stat().st_size
-            elapsed = max(time.time() - job.get("started_at", time.time()), 0.001)
-            update_job(job_id, status="completed", percentage=100, downloaded_bytes=size, total_bytes=size,
-                       filesize=size, filename=final.name, download_url=f"/api/file/{final.name}", eta=0,
-                       speed=size / elapsed, elapsed=elapsed, finished_at=time.time(), worker_running=False)
-            return
-        source = choose_source_format(info, int(quality))
-        if not source:
-            raise RuntimeError(f"{int(quality)}p is not available for this source.")
-        selector = str(source.get("format_id"))
-        if str(source.get("acodec") or "none") == "none":
-            selector = f"{selector}+bestaudio/{selector}"
+            extension = "mp3"
+            source_height = info.get("height")
+            update_job(job_id, source_height=source_height)
+        else:
+            available = get_available_heights(info)
+            if not available:
+                raise RuntimeError("No downloadable video formats were found.")
+            source_max = max(available)
+            update_job(job_id, source_height=source_max)
+            if quality > source_max:
+                available_text = ", ".join(f"{h}p" for h in available)
+                raise RuntimeError(f"{quality}p is not available for this source. Maximum available quality is {source_max}p. Available: {available_text}. Please select another quality.")
+            selected_video = choose_source_format(info, quality)
+            if not selected_video:
+                raise RuntimeError("A suitable video format could not be selected.")
+            video_format_id = selected_video.get("format_id")
+            if not video_format_id:
+                raise RuntimeError("Video format ID is unavailable.")
+            audio_format = choose_audio_format(info)
+            if audio_format:
+                format_selector = f"{video_format_id}+bestaudio/{video_format_id}"
+            else:
+                format_selector = str(video_format_id)
+            extension = "mp4"
+            selected_height = int(selected_video.get("height"))
+            update_job(job_id, source_height=selected_height)
+        output_template = str(job_dir / "%(title)s.%(ext)s")
         options = extractor_options()
-        options.update({"format": selector, "outtmpl": str(job_dir / "%(title)s.%(ext)s"),
-                        "merge_output_format": "mp4", "progress_hooks": [make_progress_hook(job_id)]})
-        update_job(job_id, status="downloading", source_height=int(source.get("height") or 0))
+        options.update({"format": format_selector, "outtmpl": output_template,
+                        "progress_hooks": [make_progress_hook(job_id)], "merge_output_format": extension,
+                        "noplaylist": True, "restrictfilenames": False, "windowsfilenames": True})
+        if mode == "audio":
+            options["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}]
+        update_job(job_id, status="downloading")
         with yt_dlp.YoutubeDL(options) as ydl:
-            downloaded = ydl.extract_info(url, download=True)
-        files = [p for p in job_dir.iterdir() if p.is_file() and not p.name.endswith((".part", ".ytdl"))]
+            downloaded_info = ydl.extract_info(url, download=True)
+        files = [f for f in job_dir.iterdir() if f.is_file() and not f.name.endswith(".part")]
         if not files:
-            raise RuntimeError("Download completed, but no final video file was produced.")
-        output = max([p for p in files if p.suffix.lower() == ".mp4"] or files, key=lambda p: p.stat().st_size)
-        if int(source.get("height") or 0) > int(quality):
-            converted = job_dir / "converted.mp4"
-            resize_video(output, converted, int(quality), job_id)
-            output = converted
-        final = unique_output_path(downloaded.get("title") or title, "mp4")
-        shutil.move(str(output), str(final))
-        size = final.stat().st_size
-        elapsed = max(time.time() - (get_job(job_id) or {}).get("started_at", time.time()), 0.001)
-        update_job(job_id, status="completed", percentage=100, downloaded_bytes=size, total_bytes=size,
-                   filesize=size, filename=final.name, download_url=f"/api/file/{final.name}", eta=0,
-                   speed=size / elapsed, elapsed=elapsed, finished_at=time.time(), worker_running=False, conversion=False)
+            raise RuntimeError("No output file was produced.")
+        output_file = max(files, key=lambda f: f.stat().st_size)
+        if mode == "video":
+            selected_source_height = get_job(job_id).get("source_height") or 0
+            if selected_source_height and selected_source_height > quality:
+                converted_file = job_dir / "converted.mp4"
+                resize_video(output_file, converted_file, quality, job_id)
+                if not converted_file.exists():
+                    raise RuntimeError("FFmpeg did not create the converted file.")
+                output_file = converted_file
+        final_extension = "mp3" if mode == "audio" else "mp4"
+        final_path = unique_output_path(title, final_extension)
+        shutil.move(str(output_file), str(final_path))
+        actual_size = final_path.stat().st_size
+        job = get_job(job_id)
+        started_at = job.get("started_at") or time.time()
+        elapsed = time.time() - started_at
+        average_speed = actual_size / elapsed if elapsed > 0 else 0
+        update_job(job_id, status="completed", percentage=100, downloaded_bytes=actual_size,
+                   total_bytes=actual_size, filesize=actual_size, filename=final_path.name,
+                   download_url=f"/api/file/{final_path.name}", elapsed=elapsed, speed=average_speed,
+                   eta=0, finished_at=time.time(), worker_running=False, paused=False, conversion=False)
     except PauseDownload:
-        update_job(job_id, status="paused", worker_running=False)
+        update_job(job_id, status="paused", paused=True, worker_running=False)
     except Exception as error:
-        update_job(job_id, status="error", error=str(error), worker_running=False, finished_at=time.time(), conversion=False)
+        error_text = str(error)
+        print(f"[{job_id}] DOWNLOAD ERROR:", error_text)
+        lower_error = error_text.lower()
+        if "cancelled by user" in lower_error:
+            message, status = "Download cancelled.", "cancelled"
+        elif "not available for this source" in lower_error:
+            message, status = error_text, "error"
+        elif "requested format is not available" in lower_error:
+            message, status = f"{quality}p is not available for this source. Please select another quality.", "error"
+        elif "unsupported url" in lower_error:
+            message, status = "This URL is not supported by the installed yt-dlp extractors.", "error"
+        elif "drm" in lower_error:
+            message, status = "This media is DRM-protected.", "error"
+        elif "sign in" in lower_error or "login" in lower_error:
+            message, status = "This source requires authentication.", "error"
+        else:
+            message, status = "Download failed. The source may be unsupported, private, restricted, DRM-protected, or temporarily unavailable.", "error"
+        update_job(job_id, status=status, error=message, worker_running=False, finished_at=time.time(), conversion=False)
     finally:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        final_job = get_job(job_id)
+        if final_job and final_job.get("status") not in ("paused", "downloading", "converting"):
+            shutil.rmtree(job_dir, ignore_errors=True)
 
 
-@app.get("/")
-def index():
+# =========================================================
+# HOME
+# =========================================================
+@app.route("/")
+def home():
     return render_template("index.html")
 
 
-@app.get("/api/job/<job_id>")
-def job_status(job_id):
-    job = get_job(job_id)
-    if not job:
-        return jsonify({"error": "Job not found."}), 404
-    return jsonify(job)
+# =========================================================
+# INFO
+# =========================================================
+@app.post("/api/info")
+def get_info():
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "Please paste a video URL."}), 400
+    try:
+        with yt_dlp.YoutubeDL(extractor_options()) as ydl:
+            info = ydl.extract_info(url, download=False)
+        formats = []
+        for fmt in info.get("formats", []):
+            height = fmt.get("height")
+            if not height:
+                continue
+            vcodec = fmt.get("vcodec")
+            acodec = fmt.get("acodec")
+            if not vcodec or vcodec == "none":
+                continue
+            size = get_format_size(fmt)
+            formats.append({"format_id": fmt.get("format_id"), "height": int(height), "width": fmt.get("width"),
+                            "ext": fmt.get("ext"), "fps": fmt.get("fps"), "filesize": size or None,
+                            "filesize_text": format_bytes(size) if size else "Size unavailable",
+                            "video_codec": vcodec, "audio_codec": acodec,
+                            "has_audio": bool(acodec and acodec != "none"), "tbr": fmt.get("tbr"), "abr": fmt.get("abr")})
+        available = get_available_heights(info)
+        quality_data = []
+        for height in available:
+            selected = choose_source_format(info, height)
+            size = get_format_size(selected) if selected else 0
+            quality_data.append({"height": height, "filesize": size or None,
+                                 "filesize_text": format_bytes(size) if size else "Size unavailable"})
+        return jsonify({"success": True, "title": info.get("title", "Unknown video"),
+                        "thumbnail": info.get("thumbnail"), "duration": info.get("duration"),
+                        "uploader": info.get("uploader"), "extractor": info.get("extractor_key"),
+                        "domain": get_domain(url), "webpage_url": info.get("webpage_url", url),
+                        "original_height": info.get("height"), "available_qualities": available,
+                        "quality_data": quality_data, "formats": formats,
+                        "has_audio": any(x.get("has_audio") for x in formats), "ffmpeg": ffmpeg_available()})
+    except Exception as error:
+        print("INFO ERROR:", error)
+        text = str(error)
+        if "Unsupported URL" in text:
+            message = "This URL is not supported by the installed yt-dlp extractors."
+        elif "DRM" in text or "drm" in text.lower():
+            message = "This media is DRM-protected."
+        else:
+            message = "This URL could not be processed. The website may be unsupported, private, restricted, DRM-protected, or temporarily unavailable."
+        return jsonify({"error": message}), 400
 
 
+# =========================================================
+# START DOWNLOAD
+# =========================================================
 @app.post("/api/download")
 def start_download():
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
-    mode = (data.get("mode") or "video").lower()
+    mode = data.get("mode", "video")
     try:
-        quality = max(144, min(2160, int(data.get("quality", 1080))))
+        quality = int(data.get("quality", 720))
     except Exception:
-        quality = 1080
+        quality = 720
     if not url:
         return jsonify({"error": "URL is required."}), 400
+    if mode not in ("video", "audio"):
+        mode = "video"
+    if quality < 1:
+        quality = 720
     job_id = create_job(url, mode, quality)
     thread = threading.Thread(target=download_worker, args=(job_id, url, mode, quality), daemon=True)
     thread.start()
     return jsonify({"success": True, "job_id": job_id, "status": "queued"})
 
 
+# =========================================================
+# STATUS
+# =========================================================
+@app.get("/api/download/<job_id>")
+def download_status(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Download job not found."}), 404
+    job["downloaded_text"] = format_bytes(job.get("downloaded_bytes")) if job.get("downloaded_bytes") else "0 B"
+    job["total_text"] = format_bytes(job.get("total_bytes")) if job.get("total_bytes") else "Unknown"
+    job["filesize_text"] = format_bytes(job.get("filesize")) if job.get("filesize") else "Unknown"
+    job["speed_text"] = format_bytes(job.get("speed")) + "/s" if job.get("speed") else "0 B/s"
+    job["eta_text"] = format_seconds(job.get("eta")) or "Calculating..."
+    job["elapsed_text"] = format_seconds(job.get("elapsed")) or "0s"
+    return jsonify(job)
+
+
+# =========================================================
+# PAUSE
+# =========================================================
+@app.post("/api/download/<job_id>/pause")
+def pause_download(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Download job not found."}), 404
+    if job.get("status") not in ("downloading", "processing"):
+        return jsonify({"error": "This download is not currently running."}), 400
+    update_job(job_id, paused=True)
+    return jsonify({"success": True, "status": "pausing"})
+
+
+# =========================================================
+# RESUME
+# =========================================================
+@app.post("/api/download/<job_id>/resume")
+def resume_download(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Download job not found."}), 404
+    if job.get("status") != "paused":
+        return jsonify({"error": "This download is not paused."}), 400
+    update_job(job_id, paused=False, cancel_requested=False, status="queued")
+    thread = threading.Thread(target=download_worker, args=(job_id, job["url"], job["mode"], job["quality"]), daemon=True)
+    thread.start()
+    return jsonify({"success": True, "status": "queued"})
+
+
+# =========================================================
+# CANCEL
+# =========================================================
+@app.post("/api/download/<job_id>/cancel")
+def cancel_download(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"error": "Download job not found."}), 404
+    update_job(job_id, cancel_requested=True, status="cancelling")
+    return jsonify({"success": True, "status": "cancelling"})
+
+
+# =========================================================
+# FILE
+# =========================================================
 @app.get("/api/file/<path:filename>")
 def download_file(filename):
-    target = (DOWNLOAD_DIR / filename).resolve()
-    base = DOWNLOAD_DIR.resolve()
-    if target != base and base not in target.parents:
-        return jsonify({"error": "Invalid file path."}), 400
-    if not target.is_file():
-        return jsonify({"error": "File not found."}), 404
-    return send_file(target, as_attachment=True, download_name=target.name)
+    filename = Path(filename).name
+    file_path = DOWNLOAD_DIR / filename
+    if not file_path.exists():
+        return "File not found", 404
+    return send_file(file_path, as_attachment=True, download_name=file_path.name)
 
 
-@app.post("/api/job/<job_id>/pause")
-def pause_job(job_id):
-    update_job(job_id, paused=True)
-    return jsonify({"success": True})
+# =========================================================
+# EXTRACTORS
+# =========================================================
+@app.get("/api/extractors")
+def extractors():
+    names = []
+    for extractor in yt_dlp.list_extractors():
+        name = getattr(extractor, "IE_NAME", None)
+        if name:
+            names.append(name)
+    names = sorted(set(names))
+    return jsonify({"count": len(names), "extractors": names})
 
 
-@app.post("/api/job/<job_id>/resume")
-def resume_job(job_id):
-    update_job(job_id, paused=False)
-    return jsonify({"success": True})
+# =========================================================
+# HEALTH
+# =========================================================
+@app.get("/api/health")
+def health():
+    return jsonify({"status": "ok", "engine": "yt-dlp",
+                    "yt_dlp_version": getattr(yt_dlp.version, "__version__", "unknown"),
+                    "extractor_count": len(list(yt_dlp.list_extractors())), "ffmpeg": ffmpeg_available()})
 
 
-@app.post("/api/job/<job_id>/cancel")
-def cancel_job(job_id):
-    update_job(job_id, cancel_requested=True)
-    return jsonify({"success": True})
+# =========================================================
+# RUN
+# =========================================================
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=True, threaded=True)
