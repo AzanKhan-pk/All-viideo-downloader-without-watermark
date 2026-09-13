@@ -25,7 +25,9 @@ def _get(url, referer=None):
     if referer:
         headers["Referer"] = referer
     if http_requests is not None:
-        response = http_requests.get(url, headers=headers, impersonate="chrome", timeout=25, allow_redirects=True)
+        response = http_requests.get(
+            url, headers=headers, impersonate="chrome", timeout=25, allow_redirects=True
+        )
         response.raise_for_status()
         return response.text, str(response.url), headers
 
@@ -64,21 +66,33 @@ def _walk(value):
             yield from _walk(child)
 
 
-def _urls(value):
-    out = []
-    seen = set()
-    for item in _walk(value):
-        for key in ("url", "urlList", "url_list", "url_list", "src", "srcSet"):
-            raw = item.get(key) if isinstance(item, dict) else None
+def _direct_url(value):
+    if isinstance(value, str) and value.startswith("http"):
+        return value
+    if isinstance(value, dict):
+        for key in ("urlList", "url_list", "url", "src"):
+            raw = value.get(key)
             values = raw if isinstance(raw, list) else [raw]
-            for candidate in values:
-                if not isinstance(candidate, str):
-                    continue
-                candidate = candidate.replace("\\u0026", "&")
-                if candidate.startswith("http") and candidate not in seen:
-                    seen.add(candidate)
-                    out.append(candidate)
-    return out
+            for item in values:
+                if isinstance(item, str) and item.startswith("http"):
+                    return item
+    return None
+
+
+def _meta(html, key, attr="property"):
+    pattern = rf'<meta[^>]+{attr}=["\']{re.escape(key)}["\'][^>]+content=["\']([^"\']+)'
+    match = re.search(pattern, html, re.I)
+    if not match:
+        pattern = rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+{attr}=["\']{re.escape(key)}["\']'
+        match = re.search(pattern, html, re.I)
+    return html_lib.unescape(match.group(1)) if match else None
+
+
+def _canonical(html):
+    match = re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)', html, re.I)
+    if not match:
+        match = re.search(r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\']canonical["\']', html, re.I)
+    return html_lib.unescape(match.group(1)) if match else None
 
 
 def _tiktok_item(data, video_id):
@@ -106,27 +120,17 @@ def _tiktok_item(data, video_id):
     return None
 
 
-def _direct_url(value):
-    if isinstance(value, str) and value.startswith("http"):
-        return value
-    if isinstance(value, dict):
-        for key in ("urlList", "url_list", "url"):
-            raw = value.get(key)
-            if isinstance(raw, list):
-                for item in raw:
-                    if isinstance(item, str) and item.startswith("http"):
-                        return item
-            elif isinstance(raw, str) and raw.startswith("http"):
-                return raw
-    return None
-
-
 def tiktok(url):
-    match = re.search(r"/(?:video|photo)/(\d+)", url)
+    initial_id = re.search(r"/(?:video|photo)/(\d+)", url)
+    html, final_url, headers = _get(url, "https://www.tiktok.com/")
+    match = initial_id or re.search(r"/(?:video|photo)/(\d+)", final_url)
+    if not match:
+        canonical = _canonical(html) or ""
+        match = re.search(r"/(?:video|photo)/(\d+)", canonical)
     if not match:
         return None
     video_id = match.group(1)
-    html, final_url, headers = _get(url, "https://www.tiktok.com/")
+
     data = _script_json(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__")
     item = _tiktok_item(data, video_id) if data else None
     if item is None:
@@ -137,30 +141,46 @@ def tiktok(url):
 
     image_urls = []
     image_post = item.get("imagePost") or {}
-    for image in image_post.get("images") or []:
+    image_values = image_post.get("images") or image_post.get("imageList") or image_post.get("image_list") or []
+    for image in image_values:
         if not isinstance(image, dict):
             continue
-        value = image.get("imageURL") or image.get("imageUrl") or image
+        value = image.get("imageURL") or image.get("imageUrl") or image.get("displayImage") or image
         candidate = _direct_url(value)
         if candidate and candidate not in image_urls:
             image_urls.append(candidate)
 
+    if not image_urls:
+        for node in _walk(item):
+            if not isinstance(node, dict):
+                continue
+            value = node.get("imageURL") or node.get("imageUrl") or node.get("displayImage")
+            candidate = _direct_url(value)
+            if candidate and candidate not in image_urls:
+                image_urls.append(candidate)
+
     video = item.get("video") or {}
     video_url = _direct_url(video.get("playAddr")) or _direct_url(video.get("downloadAddr"))
     music = item.get("music") or {}
-    audio_url = _direct_url(music.get("playUrl"))
-
+    audio_url = _direct_url(music.get("playUrl")) or _direct_url(music.get("playUrlList"))
     title = item.get("desc") or item.get("shareTitle") or f"TikTok {video_id}"
-    result = {"title": title, "source_url": final_url, "headers": headers}
+    result = {"title": title, "source_url": final_url, "headers": headers, "_fallback_direct": True}
     if image_urls:
         result["type"] = "images"
-        result["images"] = [{"url": x, "width": None, "height": None, "http_headers": headers} for x in image_urls]
+        result["images"] = [
+            {"url": x, "width": None, "height": None, "http_headers": headers}
+            for x in image_urls
+        ]
         if audio_url:
             result["audio_url"] = audio_url
         return result
     if video_url:
         result["type"] = "video"
-        result["formats"] = [{"format_id": "tiktok-direct", "url": video_url, "height": (video.get("height") or 0), "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers}]
+        result["formats"] = [{
+            "format_id": "tiktok-direct", "url": video_url,
+            "height": video.get("height") or 0, "ext": "mp4",
+            "vcodec": "h264", "acodec": "aac", "http_headers": headers,
+        }]
         if audio_url:
             result["audio_url"] = audio_url
         return result
@@ -185,10 +205,12 @@ def _pin_record(data, pin_id):
 def _pin_images(pin):
     candidates = []
     seen = set()
+
     def add(url, width=None, height=None):
         if isinstance(url, str) and url.startswith("http") and url not in seen:
             seen.add(url)
             candidates.append({"url": url, "width": width, "height": height})
+
     image = pin.get("images") if isinstance(pin, dict) else None
     if isinstance(image, dict):
         for value in image.values():
@@ -229,33 +251,51 @@ def _pin_videos(pin):
 
 
 def pinterest(url):
-    match = re.search(r"/pin/(\d+)", url)
-    if not match:
-        # pin.it is resolved by the HTTP request first.
-        match = re.search(r"(\d{12,})", url)
     html, final_url, headers = _get(url, "https://www.pinterest.com/")
+    match = re.search(r"/pin/(\d+)", url) or re.search(r"/pin/(\d+)", final_url)
     if not match:
-        match = re.search(r"/pin/(\d+)", final_url)
+        canonical = _canonical(html) or ""
+        match = re.search(r"/pin/(\d+)", canonical)
     if not match:
-        return None
-    pin_id = match.group(1)
+        match = re.search(r"(\d{12,})", final_url) or re.search(r"(\d{12,})", html)
+    pin_id = match.group(1) if match else "media"
+
     data = _script_json(html, "__PWS_DATA__")
     if data is None:
         data = _script_json(html, "__PWS_INITIAL_PROPS__")
     pin = _pin_record(data, pin_id) if data else None
+
     if not pin:
-        # Open Graph is a useful final fallback for single-image Pins.
-        og_image = re.search(r'<meta[^>]+property=[\"\']og:image[\"\'][^>]+content=[\"\']([^\"\']+)', html, re.I)
+        images = []
+        og_image = _meta(html, "og:image") or _meta(html, "twitter:image", "name")
         if og_image:
-            return {"type": "images", "title": f"Pinterest {pin_id}", "source_url": final_url, "headers": headers, "images": [{"url": html_lib.unescape(og_image.group(1)), "width": None, "height": None, "http_headers": headers}]}
+            images.append({"url": og_image, "width": None, "height": None, "http_headers": headers})
+        og_video = _meta(html, "og:video") or _meta(html, "og:video:secure_url")
+        if og_video:
+            return {
+                "type": "video", "title": f"Pinterest {pin_id}", "source_url": final_url,
+                "headers": headers, "_fallback_direct": True,
+                "formats": [{"format_id": "pinterest-og", "url": og_video, "height": 0,
+                              "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers}],
+                "images": images,
+            }
+        if images:
+            return {
+                "type": "images", "title": f"Pinterest {pin_id}", "source_url": final_url,
+                "headers": headers, "_fallback_direct": True, "images": images,
+            }
         return None
+
     images = _pin_images(pin)
     videos = _pin_videos(pin)
     title = pin.get("title") or pin.get("grid_title") or pin.get("description") or f"Pinterest {pin_id}"
-    result = {"title": title, "source_url": final_url, "headers": headers}
+    result = {"title": title, "source_url": final_url, "headers": headers, "_fallback_direct": True}
     if videos:
         result["type"] = "video"
-        result["formats"] = [{"format_id": f"pin-direct-{i}", "url": v["url"], "height": v.get("height") or 0, "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers} for i, v in enumerate(videos)]
+        result["formats"] = [{
+            "format_id": f"pin-direct-{i}", "url": v["url"], "height": v.get("height") or 0,
+            "ext": "mp4", "vcodec": "h264", "acodec": "aac", "http_headers": headers,
+        } for i, v in enumerate(videos)]
         if images:
             result["images"] = images
         return result
