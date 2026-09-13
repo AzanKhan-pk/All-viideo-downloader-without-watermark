@@ -2,6 +2,7 @@ import os
 from core_app import app
 import runtime_patches  # safe URL-aware extractor and Windows download defaults
 import media_features  # registers TikTok/Pinterest media routes
+import media_url_compat  # accepts Pinterest pin.it share links
 import location_features  # registers native download-location routes
 
 if __name__ == "__main__":
