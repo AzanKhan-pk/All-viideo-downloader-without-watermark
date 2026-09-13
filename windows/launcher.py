@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -8,10 +7,12 @@ import tempfile
 import threading
 import time
 import urllib.request
-import webbrowser
 from pathlib import Path
+import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
+import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
 APP_VERSION = "1.0.63"
@@ -20,7 +21,7 @@ RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-wi
 
 
 class WindowsBridge:
-    """Windows-only helpers retained for the existing browser UI integration."""
+    """Windows-only helpers retained for the existing Flask UI integration."""
     def __init__(self, data_root):
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
@@ -121,7 +122,7 @@ def find_free_port(start=5000, attempts=100):
                 return candidate
             except OSError:
                 continue
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    with socket.socket(socket.AF_INET, 0) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
@@ -165,37 +166,21 @@ def check_for_update():
         pass
 
 
-def locate_browser():
-    candidates = [
-        os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\Google\Chrome\Application\chrome.exe",
-        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\Microsoft\Edge\Application\msedge.exe",
-        os.environ.get("LOCALAPPDATA", "") + r"\BraveSoftware\Brave-Browser\Application\brave.exe",
-    ]
-    for raw in candidates:
-        if raw and Path(raw).is_file():
-            return raw
-    return None
-
-
-def launch_browser_app(url, data_root):
-    browser = locate_browser()
-    if browser:
-        profile = data_root / "BrowserProfile"
-        profile.mkdir(parents=True, exist_ok=True)
-        subprocess.Popen([
-            browser,
-            f"--app={url}",
-            "--new-window",
-            f"--user-data-dir={profile}",
-            "--no-first-run",
-            "--no-default-browser-check",
-        ], close_fds=True)
-        return True
-    return bool(webbrowser.open_new(url))
+def launch_native_window(url):
+    # The Windows GUI is rendered inside pywebview using the Edge WebView2
+    # engine. It never searches for, launches, or depends on Google Chrome.
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
+    webview.settings["ALLOW_FILE_URLS"] = True
+    webview.create_window(
+        APP_NAME,
+        url,
+        width=1200,
+        height=820,
+        min_size=(980, 700),
+        resizable=True,
+        confirm_close=False,
+    )
+    webview.start(gui="edgechromium", debug=False)
 
 
 def main():
@@ -232,14 +217,10 @@ def main():
         messagebox.showerror(APP_NAME, "The app could not start its local service.\n\nDetails: " + detail)
         return
 
-    url = f"http://127.0.0.1:{PORT}"
-    if not launch_browser_app(url, data_root):
-        messagebox.showerror(APP_NAME, "No web browser could be opened for the app.")
-        return
-
-    # Keep the local Flask process alive so downloads continue even when the browser window is closed.
-    while True:
-        time.sleep(60)
+    try:
+        launch_native_window(f"http://127.0.0.1:{PORT}")
+    except Exception as exc:
+        messagebox.showerror(APP_NAME, "The app window could not start.\n\nDetails: " + str(exc))
 
 
 if __name__ == "__main__":
