@@ -1,16 +1,13 @@
 import shutil
 import subprocess
-import threading
 import time
-import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
 
 from flask import jsonify, request
 
 import core_app
 import media_features
-from core_app import app, TEMP_DIR, jobs, jobs_lock, update_job, unique_output_path, ffmpeg_available
+from core_app import app, TEMP_DIR, update_job, unique_output_path, ffmpeg_available
 
 
 # Pinterest/TikTok sometimes expose only a higher real source format.
@@ -35,7 +32,7 @@ def _select_video(info, target):
     formats = _video_formats(info)
     if not formats:
         return None
-    heights = sorted({int(f.get("height")) for f in formats if f.get("height")}, reverse=False)
+    heights = sorted({int(f.get("height")) for f in formats if f.get("height")})
     if not heights:
         return None
     max_height = max(heights)
@@ -82,9 +79,7 @@ def _safe_move_or_copy(source, target):
         shutil.copy2(str(source), str(target))
 
 
-def _quality_resize(job_id, source, target, quality):
-    if int(target) <= int(quality):
-        return target
+def _quality_resize(job_id, source, quality):
     converted = source.parent / "converted-final.mp4"
     core_app.resize_video(source, converted, int(quality), job_id)
     if not converted.exists() or converted.stat().st_size <= 0:
@@ -141,7 +136,8 @@ def _quality_worker(job_id, url, quality):
                 raise RuntimeError("Download completed, but no final video file was produced.")
             mp4s = [p for p in files if p.suffix.lower() == ".mp4"]
             output = max(mp4s or files, key=lambda p: p.stat().st_size)
-            output = _quality_resize(job_id, output, output, quality) if source_height > int(quality) else output
+            if source_height > int(quality):
+                output = _quality_resize(job_id, output, quality)
             final = unique_output_path(title, "mp4")
             _safe_move_or_copy(output, final)
             _finish(job_id, final, started_at)
@@ -154,9 +150,13 @@ def _quality_worker(job_id, url, quality):
         direct = [f for f in formats if isinstance(f, dict) and f.get("url")]
         if not direct:
             raise RuntimeError("No downloadable video stream was returned by the site.")
-        direct.sort(key=lambda f: int(f.get("height") or 0) if str(f.get("height") or "").isdigit() else 0)
+        heights = [int(f.get("height") or 0) for f in direct]
+        max_height = max(heights or [0])
+        if max_height and int(quality) > max_height:
+            raise RuntimeError(f"{int(quality)}p is not available for this source. Maximum available quality is {max_height}p.")
+        direct.sort(key=lambda f: int(f.get("height") or 0))
         candidates = [f for f in direct if int(f.get("height") or 0) >= int(quality)]
-        selected = candidates[0] if candidates else max(direct, key=lambda f: int(f.get("height") or 0) if str(f.get("height") or "").isdigit() else 0)
+        selected = candidates[0] if candidates else direct[-1]
         source_height = int(selected.get("height") or 0)
         update_job(job_id, title=fallback.get("title") or title, source_height=source_height, status="downloading")
         source = job_dir / "source.mp4"
@@ -170,7 +170,7 @@ def _quality_worker(job_id, url, quality):
             if result.returncode == 0 and merged.exists() and merged.stat().st_size > 0:
                 source = merged
         if source_height > int(quality):
-            source = _quality_resize(job_id, source, source, quality)
+            source = _quality_resize(job_id, source, quality)
         final = unique_output_path(fallback.get("title") or title, "mp4")
         _safe_move_or_copy(source, final)
         _finish(job_id, final, started_at)
@@ -229,9 +229,6 @@ def _image_candidate_patch(info):
 
 
 media_features._image_candidates = _image_candidate_patch
-
-
-_original_preview = app.view_functions.get("media_preview")
 
 
 def _preview():
