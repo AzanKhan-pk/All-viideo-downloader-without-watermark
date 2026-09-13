@@ -4,7 +4,8 @@
 .special-media-box{max-width:920px;margin:10px auto 55px;padding:24px 22px;border:1px solid rgba(124,58,237,.25);border-radius:22px;background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(250,204,21,.035));box-shadow:0 25px 70px rgba(0,0,0,.24)}
 .special-media-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:15px}.special-media-head h2{font-size:22px}.special-media-head p{margin-top:6px;color:#9292a3;font-size:12px;line-height:1.6}.special-focus{padding:6px 10px;border-radius:999px;background:rgba(250,204,21,.09);border:1px solid rgba(250,204,21,.25);color:#facc15;font-size:10px;font-weight:900;white-space:nowrap}.special-row{display:flex;gap:9px}.special-row input{flex:1;min-width:0;height:52px;padding:0 15px;border:1px solid rgba(255,255,255,.10);border-radius:13px;background:#08080d;color:white;outline:none}.special-row input:focus{border-color:#7c3aed;box-shadow:0 0 0 4px rgba(124,58,237,.10)}.special-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.special-btn{min-height:42px;padding:0 15px;border-radius:11px;border:1px solid rgba(255,255,255,.10);background:#10101a;color:#ddd;cursor:pointer;font-size:12px;font-weight:850}.special-btn.primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}.special-btn.image{border-color:rgba(250,204,21,.28);color:#facc15}.special-btn:disabled{opacity:.55;cursor:not-allowed}.special-status{min-height:24px;margin-top:13px;color:#9d9dad;font-size:12px;line-height:1.6}.special-result{display:none;margin-top:12px;padding:13px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.special-result.show{display:block}.special-result a{display:inline-flex;margin-top:8px;padding:9px 12px;border-radius:9px;background:rgba(250,204,21,.10);border:1px solid rgba(250,204,21,.25);color:#facc15;text-decoration:none;font-size:11px;font-weight:850}
 #appContextMenu{position:fixed;z-index:2147483647;display:none;min-width:180px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:#111118;box-shadow:0 18px 55px rgba(0,0,0,.45);font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;color:#eee}.app-menu-item{display:block;width:100%;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}.app-menu-item:hover{background:rgba(124,58,237,.24)}.app-menu-sep{height:1px;margin:5px 4px;background:rgba(255,255,255,.08)}
-@media(max-width:760px){.special-media-box{margin-left:16px;margin-right:16px;padding:18px 14px}.special-media-head{flex-direction:column}.special-row{flex-direction:column}.special-row input{width:100%}.special-btn{flex:1}}
+.location-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto}.location-chip{min-height:40px;padding:8px 12px;white-space:nowrap}.location-chip.location-browse{border-color:rgba(124,58,237,.45);color:#cdbdff;background:rgba(124,58,237,.08)}.location-chip.location-open{border-color:rgba(250,204,21,.30);color:#facc15;background:rgba(250,204,21,.06)}.location-chip:disabled{opacity:.55;cursor:not-allowed}.location-path-toast{position:fixed;left:50%;bottom:72px;z-index:600;transform:translateX(-50%);max-width:min(720px,calc(100vw - 28px));padding:9px 13px;border:1px solid rgba(255,255,255,.10);border-radius:10px;background:rgba(20,20,30,.97);color:#cfcfda;font-size:11px;box-shadow:0 15px 45px rgba(0,0,0,.38);pointer-events:none;opacity:0;transition:.25s ease}.location-path-toast.show{opacity:1}
+@media(max-width:760px){.special-media-box{margin-left:16px;margin-right:16px;padding:18px 14px}.special-media-head{flex-direction:column}.special-row{flex-direction:column}.special-row input{width:100%}.special-btn{flex:1}.location-tools{width:100%;margin-left:0}.location-tools .location-chip{flex:1}}
 </style>
 
 <section class="special-media-box" id="special-media-tools">
@@ -33,6 +34,8 @@
   <div class="app-menu-sep"></div>
   <button class="app-menu-item" data-edit="selectall">▣ Select all</button>
 </div>
+
+<div id="locationPathToast" class="location-path-toast" aria-live="polite"></div>
 
 <script>
 (() => {
@@ -126,5 +129,54 @@
 
   buttons.forEach(button => button.addEventListener('click', () => runSpecial(button.dataset.specialKind)));
   input.addEventListener('keydown', event => { if (event.key === 'Enter') runSpecial('video'); });
+})();
+
+/* Compact native download-location controls beside the quality chips. */
+(() => {
+  const qualities = document.querySelector('.qualities');
+  const status = document.querySelector('#status');
+  const toast = document.querySelector('#locationPathToast');
+  if (!qualities || qualities.querySelector('#locationTools')) return;
+
+  const tools = document.createElement('div');
+  tools.id = 'locationTools';
+  tools.className = 'location-tools';
+  tools.innerHTML = '<button class="chip location-chip location-browse" id="browseLocation" type="button" title="Choose where downloads are saved">📍 Browse Location</button><button class="chip location-chip location-open" id="openFolder" type="button" title="Open the current download folder">📂 Open Folder</button>';
+  qualities.appendChild(tools);
+
+  const browse = tools.querySelector('#browseLocation');
+  const open = tools.querySelector('#openFolder');
+
+  function showPath(path) {
+    if (!toast) return;
+    toast.textContent = path || 'Download location updated.';
+    toast.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
+  }
+
+  async function locationRequest(endpoint, button) {
+    button.disabled = true;
+    try {
+      const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to access the download location.');
+      if (data.path) showPath(data.path);
+      if (status) status.textContent = endpoint.includes('/browse') ? (data.cancelled ? 'Download location unchanged.' : `Download location: ${data.path}`) : `Opened download folder: ${data.path}`;
+    } catch (error) {
+      if (status) status.textContent = error.message || 'Unable to access the download location.';
+      showPath(error.message || 'Unable to access the download location.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  browse.addEventListener('click', () => locationRequest('/api/location/browse', browse));
+  open.addEventListener('click', () => locationRequest('/api/location/open', open));
+
+  fetch('/api/location', {cache:'no-store'})
+    .then(response => response.ok ? response.json() : null)
+    .then(data => { if (data?.path && status) status.textContent = `Download location: ${data.path}`; })
+    .catch(() => {});
 })();
 </script>
