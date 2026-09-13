@@ -2,8 +2,8 @@ import os
 from core_app import app
 import runtime_patches  # safe URL-aware extractor and Windows download defaults
 import media_features  # registers TikTok/Pinterest media routes
-import media_quality_patch  # exact focused quality, preview thumbnails, stronger image extraction
-tiktok_image_patch = None  # legacy patch is superseded by media_quality_patch
+import media_quality_patch  # focused quality, preview thumbnails, and image extraction
+import media_resilience_patch  # rejects HTML-as-media, supports Pinterest HLS, hardens preview/quality
 import media_url_compat  # accepts Pinterest pin.it share links
 import location_features  # registers native download-location routes
 import history_features  # persists completed downloads across app restarts
