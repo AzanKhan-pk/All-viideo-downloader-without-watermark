@@ -2,6 +2,7 @@ import os
 from core_app import app
 import runtime_patches  # safe URL-aware extractor and Windows download defaults
 import media_features  # registers TikTok/Pinterest media routes
+import tiktok_image_patch  # captures TikTok slideshow images returned as direct entries
 import media_url_compat  # accepts Pinterest pin.it share links
 import location_features  # registers native download-location routes
 import history_features  # persists completed downloads across app restarts
