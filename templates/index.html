@@ -1,182 +1,148 @@
 {% include 'core_index.html' %}
 
 <style>
-.special-media-box{max-width:920px;margin:10px auto 55px;padding:24px 22px;border:1px solid rgba(124,58,237,.25);border-radius:22px;background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(250,204,21,.035));box-shadow:0 25px 70px rgba(0,0,0,.24)}
-.special-media-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:15px}.special-media-head h2{font-size:22px}.special-media-head p{margin-top:6px;color:#9292a3;font-size:12px;line-height:1.6}.special-focus{padding:6px 10px;border-radius:999px;background:rgba(250,204,21,.09);border:1px solid rgba(250,204,21,.25);color:#facc15;font-size:10px;font-weight:900;white-space:nowrap}.special-row{display:flex;gap:9px}.special-row input{flex:1;min-width:0;height:52px;padding:0 15px;border:1px solid rgba(255,255,255,.10);border-radius:13px;background:#08080d;color:white;outline:none}.special-row input:focus{border-color:#7c3aed;box-shadow:0 0 0 4px rgba(124,58,237,.10)}.special-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.special-btn{min-height:42px;padding:0 15px;border-radius:11px;border:1px solid rgba(255,255,255,.10);background:#10101a;color:#ddd;cursor:pointer;font-size:12px;font-weight:850}.special-btn.primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}.special-btn.image{border-color:rgba(250,204,21,.28);color:#facc15}.special-btn:disabled{opacity:.55;cursor:not-allowed}.special-status{min-height:24px;margin-top:13px;color:#9d9dad;font-size:12px;line-height:1.6}.special-result{display:none;margin-top:12px;padding:13px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}.special-result.show{display:block}.special-result a{display:inline-flex;margin-top:8px;padding:9px 12px;border-radius:9px;background:rgba(250,204,21,.10);border:1px solid rgba(250,204,21,.25);color:#facc15;text-decoration:none;font-size:11px;font-weight:850}
-#appContextMenu{position:fixed;z-index:2147483647;display:none;min-width:180px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:#111118;box-shadow:0 18px 55px rgba(0,0,0,.45);font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;color:#eee}.app-menu-item{display:block;width:100%;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}.app-menu-item:hover{background:rgba(124,58,237,.24)}.app-menu-sep{height:1px;margin:5px 4px;background:rgba(255,255,255,.08)}
-.location-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto}.location-chip{min-height:40px;padding:8px 12px;white-space:nowrap}.location-chip.location-browse{border-color:rgba(124,58,237,.45);color:#cdbdff;background:rgba(124,58,237,.08)}.location-chip.location-open{border-color:rgba(250,204,21,.30);color:#facc15;background:rgba(250,204,21,.06)}.location-chip:disabled{opacity:.55;cursor:not-allowed}.location-path-toast{position:fixed;left:50%;bottom:72px;z-index:600;transform:translateX(-50%);max-width:min(720px,calc(100vw - 28px));padding:9px 13px;border:1px solid rgba(255,255,255,.10);border-radius:10px;background:rgba(20,20,30,.97);color:#cfcfda;font-size:11px;box-shadow:0 15px 45px rgba(0,0,0,.38);pointer-events:none;opacity:0;transition:.25s ease}.location-path-toast.show{opacity:1}
-@media(max-width:760px){.special-media-box{margin-left:16px;margin-right:16px;padding:18px 14px}.special-media-head{flex-direction:column}.special-row{flex-direction:column}.special-row input{width:100%}.special-btn{flex:1}.location-tools{width:100%;margin-left:0}.location-tools .location-chip{flex:1}}
+/* Integrated public-media gallery and compact location controls. */
+.social-gallery{margin-top:16px;padding:14px;border:1px solid rgba(124,58,237,.22);border-radius:15px;background:rgba(124,58,237,.055)}
+.social-gallery-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}
+.social-gallery-title{font-size:13px;font-weight:850}.social-gallery-count{font-size:11px;color:#9d9dad}
+.social-gallery-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;max-height:360px;overflow:auto;padding-right:2px}
+.social-image-card{position:relative;display:block;min-width:0;padding:0;border:1px solid rgba(255,255,255,.09);border-radius:10px;overflow:hidden;background:#0b0b12;cursor:pointer}
+.social-image-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}.social-image-card input{position:absolute;top:7px;left:7px;width:18px;height:18px;accent-color:#7c3aed;z-index:2}
+.social-image-card.selected{border-color:rgba(250,204,21,.7);box-shadow:0 0 0 2px rgba(250,204,21,.12)}
+.social-gallery-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.social-gallery-actions .chip{min-height:38px}.social-gallery-actions .primary{background:linear-gradient(135deg,#6d28d9,#a855f7);border:0;color:white}
+.compact-location{display:flex;gap:8px;align-items:center;margin-left:auto}.compact-location .chip{min-height:40px;white-space:nowrap}.compact-location .browse{border-color:rgba(124,58,237,.42);color:#cdbdff}.compact-location .open{border-color:rgba(250,204,21,.30);color:#facc15}
+@media(max-width:760px){.social-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.compact-location{width:100%;margin-left:0}.compact-location .chip{flex:1}}
 </style>
-
-<section class="special-media-box" id="special-media-tools">
-  <div class="special-media-head">
-    <div>
-      <h2>⚡ TikTok & Pinterest Media</h2>
-      <p>TikTok-focused video handling with audio merge, plus picture downloading for TikTok and Pinterest public posts.</p>
-    </div>
-    <span class="special-focus">TIKTOK FOCUS</span>
-  </div>
-  <div class="special-row">
-    <input id="specialUrl" type="url" placeholder="Paste a TikTok or Pinterest URL…" autocomplete="off" spellcheck="false">
-  </div>
-  <div class="special-actions">
-    <button class="special-btn primary" data-special-kind="video">🎬 Download Video + Audio</button>
-    <button class="special-btn image" data-special-kind="image">🖼️ Download Picture</button>
-  </div>
-  <div class="special-status" id="specialStatus">Public media only. No login or private-content bypass.</div>
-  <div class="special-result" id="specialResult"></div>
-</section>
-
-<div id="appContextMenu" role="menu" aria-hidden="true">
-  <button class="app-menu-item" data-edit="cut">✂ Cut</button>
-  <button class="app-menu-item" data-edit="copy">📋 Copy</button>
-  <button class="app-menu-item" data-edit="paste">📥 Paste</button>
-  <div class="app-menu-sep"></div>
-  <button class="app-menu-item" data-edit="selectall">▣ Select all</button>
-</div>
-
-<div id="locationPathToast" class="location-path-toast" aria-live="polite"></div>
 
 <script>
 (() => {
-  const input = document.getElementById('specialUrl');
-  const status = document.getElementById('specialStatus');
-  const result = document.getElementById('specialResult');
-  const buttons = [...document.querySelectorAll('[data-special-kind]')];
-  const menu = document.getElementById('appContextMenu');
-  if (!input || !status || !result || !buttons.length) return;
+  const urlInput = document.getElementById('url');
+  const fetchButton = document.getElementById('fetch');
+  const result = document.getElementById('result');
+  const status = document.getElementById('status');
+  const qualities = document.querySelector('.qualities');
+  if (!urlInput || !fetchButton || !result || !status || !qualities) return;
 
-  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const domainOK = (url) => {
+  const specialDomain = value => {
     try {
-      const host = new URL(url).hostname.toLowerCase();
+      const host = new URL(value).hostname.toLowerCase().replace(/^www\./,'');
       return host === 'tiktok.com' || host.endsWith('.tiktok.com') || host === 'pinterest.com' || host.endsWith('.pinterest.com') || host.endsWith('.pinterest.co.uk') || host.endsWith('.pinterest.de') || host.endsWith('.pinterest.fr');
     } catch (_) { return false; }
   };
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
-  async function clipboardWrite(text) {
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
-    const area = document.createElement('textarea'); area.value = text; document.body.appendChild(area); area.select(); const ok = document.execCommand('copy'); area.remove(); return ok;
+  function installLocationButtons(){
+    if (document.getElementById('compactLocation')) return;
+    const wrap=document.createElement('div'); wrap.id='compactLocation'; wrap.className='compact-location';
+    wrap.innerHTML='<button class="chip browse" id="compactBrowse" type="button">📍 Browse Location</button><button class="chip open" id="compactOpen" type="button">📂 Open Folder</button>';
+    qualities.appendChild(wrap);
+    const call=async(endpoint,button)=>{
+      button.disabled=true;
+      try{
+        const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store'}); const d=await r.json();
+        if(!r.ok) throw new Error(d.error||'Unable to access the download folder.');
+        status.textContent=endpoint.includes('/browse')?(d.cancelled?'Download location unchanged.':`Download location: ${d.path}`):`Opened download folder: ${d.path}`;
+      }catch(e){status.textContent=e.message||'Unable to access the download folder.';}finally{button.disabled=false;}
+    };
+    wrap.querySelector('#compactBrowse').onclick=()=>call('/api/location/browse',wrap.querySelector('#compactBrowse'));
+    wrap.querySelector('#compactOpen').onclick=()=>call('/api/location/open',wrap.querySelector('#compactOpen'));
   }
-  async function clipboardRead() {
-    if (navigator.clipboard?.readText) return await navigator.clipboard.readText();
-    return '';
-  }
-  function hideMenu() { menu.style.display = 'none'; menu.setAttribute('aria-hidden','true'); }
-  function showMenu(x, y) {
-    menu.style.display = 'block'; menu.setAttribute('aria-hidden','false');
-    const r = menu.getBoundingClientRect(); menu.style.left = Math.min(x, innerWidth-r.width-8)+'px'; menu.style.top = Math.min(y, innerHeight-r.height-8)+'px';
-  }
-  document.addEventListener('contextmenu', (event) => {
-    const target = event.target.closest('input, textarea, [contenteditable="true"]');
-    if (!target) return;
-    event.preventDefault();
-    target.focus();
-    showMenu(event.clientX, event.clientY);
-  }, true);
-  document.addEventListener('click', hideMenu);
-  document.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
-      if (document.activeElement.matches('input, textarea, [contenteditable="true"]')) return;
-    }
-    if (event.key === 'Escape') hideMenu();
-  });
-  menu.addEventListener('click', async (event) => {
-    const action = event.target.closest('[data-edit]')?.dataset.edit;
-    if (!action) return;
-    event.stopPropagation();
-    input.focus();
-    try {
-      if (action === 'copy') await clipboardWrite(input.value.substring(input.selectionStart, input.selectionEnd) || input.value);
-      if (action === 'cut') { await clipboardWrite(input.value.substring(input.selectionStart, input.selectionEnd) || input.value); document.execCommand('cut'); }
-      if (action === 'paste') { const text = await clipboardRead(); if (text) { const a=input.selectionStart,b=input.selectionEnd; input.setRangeText(text,a,b,'end'); input.dispatchEvent(new Event('input',{bubbles:true})); } }
-      if (action === 'selectall') input.select();
-    } catch (_) { status.textContent = 'Clipboard access was blocked. Use Ctrl+C / Ctrl+V in the app window.'; }
-    hideMenu();
-  });
+  installLocationButtons();
 
-  async function runSpecial(kind) {
-    const url = input.value.trim();
-    if (!url) { status.textContent = 'Please paste a TikTok or Pinterest URL first.'; return; }
-    if (!domainOK(url)) { status.textContent = 'Please use a TikTok or Pinterest URL for this focused tool.'; return; }
-
-    buttons.forEach(b => b.disabled = true);
-    result.classList.remove('show'); result.innerHTML = '';
-    status.textContent = kind === 'image' ? 'Finding the best available picture…' : 'Downloading video + audio…';
-
-    try {
-      const response = await fetch('/api/special-download', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url,kind,quality:2160}) });
-      const data = await response.json();
-      if (!response.ok || !data.job_id) throw new Error(data.error || 'Could not start the download.');
-      let finished = false;
-      for (let i=0; i<900; i++) {
-        await new Promise(r=>setTimeout(r,500));
-        const poll = await fetch('/api/download/'+encodeURIComponent(data.job_id), {cache:'no-store'});
-        const job = await poll.json();
-        const pct = Math.round(Number(job.percentage||0));
-        status.textContent = `${job.status||'processing'}${pct ? ` — ${pct}%` : ''}`;
-        if (job.status === 'completed' && job.download_url) {
-          finished = true;
-          result.innerHTML = `<div><strong>${esc(job.title || (kind==='image'?'Picture':'Video'))}</strong><br><small>${esc(job.filesize_text || '')}</small></div><a href="${esc(job.download_url)}" download>⬇ Save ${kind==='image'?'Picture':'Video'}</a>`;
-          result.classList.add('show'); status.textContent = 'Done — your media is ready.'; break;
+  async function pollSpecial(jobId, label){
+    for(let i=0;i<900;i++){
+      await new Promise(r=>setTimeout(r,500));
+      const response=await fetch('/api/download/'+encodeURIComponent(jobId),{cache:'no-store'});
+      const job=await response.json();
+      const pct=Math.round(Number(job.percentage||0));
+      status.textContent=`${label}${pct?` — ${pct}%`:''}`;
+      if(job.status==='completed'){
+        if(job.download_url){
+          const link=document.createElement('a'); link.href=job.download_url; link.download=job.filename||'download'; link.style.display='none'; document.body.appendChild(link); link.click(); link.remove();
         }
-        if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error || 'Download failed.');
+        status.textContent='Download completed.'; return job;
       }
-      if (!finished) throw new Error('The download is taking too long. Please try again.');
-    } catch (error) { status.textContent = error?.message || 'Download failed.'; }
-    finally { buttons.forEach(b=>b.disabled=false); }
-  }
-
-  buttons.forEach(button => button.addEventListener('click', () => runSpecial(button.dataset.specialKind)));
-  input.addEventListener('keydown', event => { if (event.key === 'Enter') runSpecial('video'); });
-})();
-
-/* Compact native download-location controls beside the quality chips. */
-(() => {
-  const qualities = document.querySelector('.qualities');
-  const status = document.querySelector('#status');
-  const toast = document.querySelector('#locationPathToast');
-  if (!qualities || qualities.querySelector('#locationTools')) return;
-
-  const tools = document.createElement('div');
-  tools.id = 'locationTools';
-  tools.className = 'location-tools';
-  tools.innerHTML = '<button class="chip location-chip location-browse" id="browseLocation" type="button" title="Choose where downloads are saved">📍 Browse Location</button><button class="chip location-chip location-open" id="openFolder" type="button" title="Open the current download folder">📂 Open Folder</button>';
-  qualities.appendChild(tools);
-
-  const browse = tools.querySelector('#browseLocation');
-  const open = tools.querySelector('#openFolder');
-
-  function showPath(path) {
-    if (!toast) return;
-    toast.textContent = path || 'Download location updated.';
-    toast.classList.add('show');
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
-  }
-
-  async function locationRequest(endpoint, button) {
-    button.disabled = true;
-    try {
-      const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store'});
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to access the download location.');
-      if (data.path) showPath(data.path);
-      if (status) status.textContent = endpoint.includes('/browse') ? (data.cancelled ? 'Download location unchanged.' : `Download location: ${data.path}`) : `Opened download folder: ${data.path}`;
-    } catch (error) {
-      if (status) status.textContent = error.message || 'Unable to access the download location.';
-      showPath(error.message || 'Unable to access the download location.');
-    } finally {
-      button.disabled = false;
+      if(job.status==='error'||job.status==='cancelled') throw new Error(job.error||'Download failed.');
     }
+    throw new Error('The download is taking too long. Please try again.');
   }
 
-  browse.addEventListener('click', () => locationRequest('/api/location/browse', browse));
-  open.addEventListener('click', () => locationRequest('/api/location/open', open));
+  function renderGallery(data){
+    const images=(data.images||[]).filter(x=>x&&x.url).slice(0,40);
+    if(!images.length) return false;
+    const photoMode=Boolean(data.is_photo);
+    result.innerHTML=`<div class="social-gallery"><div class="social-gallery-head"><div class="social-gallery-title">🖼️ ${esc(data.title||'Pictures')}</div><div class="social-gallery-count">${images.length} image${images.length===1?'':'s'} found</div></div><div class="social-gallery-grid">${images.map((img,i)=>`<label class="social-image-card selected"><input type="checkbox" data-social-index="${i}" checked><img src="${esc(img.url)}" alt="Image ${i+1}" loading="lazy"></label>`).join('')}</div><div class="social-gallery-actions"><button class="chip" id="socialSelectAll" type="button">Select all</button><button class="chip" id="socialClearAll" type="button">Clear</button><button class="chip primary" id="socialDownloadSelected" type="button">⬇ Download selected</button>${photoMode?'':'<button class="chip" id="socialUseVideo" type="button">🎬 Download video</button>'}</div></div>`;
+    result.hidden=false;
+    const cards=[...result.querySelectorAll('.social-image-card')];
+    cards.forEach(card=>card.addEventListener('click',e=>{if(e.target.matches('input')) return; const cb=card.querySelector('input'); cb.checked=!cb.checked; card.classList.toggle('selected',cb.checked);}));
+    result.querySelector('#socialSelectAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=true;c.classList.add('selected');});
+    result.querySelector('#socialClearAll').onclick=()=>cards.forEach(c=>{const cb=c.querySelector('input');cb.checked=false;c.classList.remove('selected');});
+    result.querySelector('#socialDownloadSelected').onclick=async()=>{
+      const selected=[...result.querySelectorAll('[data-social-index]:checked')].map(cb=>images[Number(cb.dataset.socialIndex)]);
+      if(!selected.length){status.textContent='Select at least one picture first.';return;}
+      const button=result.querySelector('#socialDownloadSelected');button.disabled=true;status.textContent='Downloading selected pictures…';
+      try{const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:urlInput.value.trim(),kind:'images',images:selected})});const d=await r.json();if(!r.ok||!d.job_id)throw new Error(d.error||'Could not start picture download.');await pollSpecial(d.job_id,'Downloading pictures');}catch(e){status.textContent=e.message||'Picture download failed.';}finally{button.disabled=false;}
+    };
+    const videoButton=result.querySelector('#socialUseVideo');
+    if(videoButton) videoButton.onclick=()=>smartVideoDownload();
+    return true;
+  }
 
-  fetch('/api/location', {cache:'no-store'})
-    .then(response => response.ok ? response.json() : null)
-    .then(data => { if (data?.path && status) status.textContent = `Download location: ${data.path}`; })
-    .catch(() => {});
+  async function specialPreview(){
+    const url=urlInput.value.trim();
+    const response=await fetch('/api/media-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const data=await response.json();
+    if(!response.ok) throw new Error(data.error||'Unable to read this public media URL.');
+    return data;
+  }
+
+  async function smartVideoDownload(){
+    const url=urlInput.value.trim();
+    if(!specialDomain(url)){return window.startDownload();}
+    const button=document.getElementById('downloadBtn');
+    if(button) button.disabled=true;
+    try{
+      const r=await fetch('/api/special-download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,kind:'video',quality:Number(window.currentQuality||2160)})});
+      const d=await r.json(); if(!r.ok||!d.job_id) throw new Error(d.error||'Could not start the video download.');
+      await pollSpecial(d.job_id,'Downloading video + audio');
+    }catch(e){status.textContent=e.message||'Video download failed.';}
+    finally{if(button) button.disabled=false;}
+  }
+
+  function replaceDownloadButtonForSpecial(){
+    const old=document.getElementById('downloadBtn');
+    if(!old || !specialDomain(urlInput.value.trim())) return;
+    const fresh=old.cloneNode(true); old.replaceWith(fresh);
+    fresh.addEventListener('click',()=>{
+      if(String(window.currentMode||'video')==='audio') window.startDownload();
+      else smartVideoDownload();
+    });
+  }
+
+  const originalFetch=window.fetchMedia;
+  const originalFetchButton=fetchButton;
+  const replacement=originalFetchButton.cloneNode(true); originalFetchButton.replaceWith(replacement);
+  replacement.addEventListener('click',async()=>{
+    const url=urlInput.value.trim();
+    if(!url){return originalFetch();}
+    if(!specialDomain(url)){return originalFetch();}
+    replacement.disabled=true;replacement.textContent='Reading…';result.hidden=true;status.textContent='Checking TikTok/Pinterest media…';
+    try{
+      const preview=await specialPreview();
+      if(preview.is_photo && renderGallery(preview)){
+        status.textContent='Select the pictures you want to download.';
+      }else{
+        await originalFetch();
+        setTimeout(replaceDownloadButtonForSpecial,0);
+      }
+    }catch(e){status.textContent=e.message||'Unable to read this media URL.';}
+    finally{replacement.disabled=false;replacement.textContent='Fetch Media';}
+  });
+
+  urlInput.addEventListener('keydown',event=>{
+    if(event.key==='Enter' && specialDomain(urlInput.value.trim())){
+      event.preventDefault();event.stopImmediatePropagation();replacement.click();
+    }
+  },true);
 })();
 </script>
