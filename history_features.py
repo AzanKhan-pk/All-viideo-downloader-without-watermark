@@ -68,9 +68,8 @@ def _record_completed_job(job):
         _save_history(items)
 
 
-# Persist completion on the server as well as in the UI. This means the list survives
-# closing/reopening the app even if the browser-side completion hook was interrupted.
 _original_core_update_job = core_app.update_job
+
 
 def _history_update_job(job_id, **values):
     _original_core_update_job(job_id, **values)
@@ -80,12 +79,18 @@ def _history_update_job(job_id, **values):
         except Exception:
             pass
 
+
 core_app.update_job = _history_update_job
 
-# media_features imported update_job directly, so patch its bound reference too.
+# These modules imported update_job directly, so patch their local bindings too.
 try:
     import media_features
     media_features.update_job = _history_update_job
+except Exception:
+    pass
+try:
+    import media_quality_patch
+    media_quality_patch.update_job = _history_update_job
 except Exception:
     pass
 
