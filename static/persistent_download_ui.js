@@ -10,7 +10,6 @@
     .job{position:relative}
     .avd-history-card .job-actions{display:none!important}
     .avd-history-card .completed-link{margin-right:4px}
-    .avd-history-empty{color:#777786;font-size:12px;padding:5px 0 2px}
     .job-title,.job-error,.result-title,.result-meta{user-select:text!important;-webkit-user-select:text!important;cursor:text}
   `;
   document.head.appendChild(css);
@@ -139,14 +138,14 @@
       const box = jobs();
       if (!box) return;
       [...box.querySelectorAll('.avd-history-card')].forEach(card => card.remove());
-      data.items.forEach(item => box.appendChild(historyCard(item));
+      data.items.forEach(item => box.appendChild(historyCard(item)));
       updateCount();
     } catch (_) {}
   }
 
   function enhanceCompletedJob(jobId, data) {
     const card = document.getElementById(`job-${jobId}`);
-    if (!card || !data || data.status !== 'completed' || !data.filename) return;
+    if (!card || !data || String(data.status).toLowerCase() !== 'completed' || !data.filename) return;
     const item = {
       id: `job-${jobId}`,
       title: data.title || data.filename,
@@ -158,6 +157,7 @@
     };
     addControls(card, item, false);
     saveHistory(data);
+    updateCount();
   }
 
   function installRenderHook() {
@@ -165,16 +165,35 @@
     const original = window.renderJob;
     window.renderJob = function(jobId, data) {
       const result = original.apply(this, arguments);
-      if (data && String(data.status).toLowerCase() === 'completed') {
-        setTimeout(() => enhanceCompletedJob(jobId, data), 0);
-      }
+      if (data && String(data.status).toLowerCase() === 'completed') setTimeout(() => enhanceCompletedJob(jobId, data), 0);
       return result;
     };
     window.__AVD_RENDER_HOOK__ = true;
   }
 
-  // The original downloader UI remains responsible for progress/speed/ETA.
-  // This layer only adds persistence and the two requested completed-card controls.
+  // Preserve selected text before the app-owned context menu opens.
+  let lastTextSelection = '';
+  document.addEventListener('contextmenu', () => {
+    try { lastTextSelection = String(window.getSelection ? window.getSelection() || '' : '').trim(); } catch (_) { lastTextSelection = ''; }
+  }, true);
+
+  // The original menu may run first and clear the selection; if that happens,
+  // complete its Copy action with the text captured at right-click time.
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('#avdContextMenu [data-action="copy"]');
+    if (!button || !lastTextSelection) return;
+    try {
+      await navigator.clipboard.writeText(lastTextSelection);
+    } catch (_) {
+      const area = document.createElement('textarea');
+      area.value = lastTextSelection; area.style.position='fixed'; area.style.opacity='0';
+      document.body.appendChild(area); area.select();
+      try { document.execCommand('copy'); } catch (__) {}
+      area.remove();
+    }
+    lastTextSelection = '';
+  }, true);
+
   const boot = () => {
     installRenderHook();
     loadHistory();
