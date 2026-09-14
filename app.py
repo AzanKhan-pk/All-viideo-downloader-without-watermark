@@ -6,6 +6,7 @@ import social_html_fallback  # HTML fallback for TikTok photo and Pinterest medi
 import media_quality_patch  # focused quality, preview thumbnails, and image extraction
 import media_resilience_patch  # rejects HTML-as-media, supports Pinterest HLS, hardens preview/quality
 import media_url_compat  # accepts Pinterest pin.it share links
+import conversion_audio_patch  # live FFmpeg conversion progress and Pinterest audio merge
 import location_features  # registers native download-location routes
 import history_features  # persists completed downloads across app restarts
 import ui_patches  # injects persistent controls while preserving the original progress UI
