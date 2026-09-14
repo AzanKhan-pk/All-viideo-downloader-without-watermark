@@ -12,6 +12,7 @@ def inject_persistent_download_ui(response):
                 '<script src="/static/persistent_download_ui.js"></script>',
                 '<script src="/static/special_preview_ui.js"></script>',
                 '<script src="/static/text_selection_patch.js"></script>',
+                '<script src="/static/progress_size_stability_patch.js"></script>',
             )
             if "</body>" in body:
                 for marker in markers:
