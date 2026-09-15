@@ -26,6 +26,35 @@ class WindowsBridge:
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.window = None
+
+    def bind_window(self, window):
+        self.window = window
+
+    def minimize_window(self):
+        if self.window is not None:
+            self.window.minimize()
+        return True
+
+    def maximize_window(self):
+        if self.window is not None:
+            self.window.maximize()
+        return True
+
+    def restore_window(self):
+        if self.window is not None:
+            self.window.restore()
+        return True
+
+    def toggle_fullscreen(self):
+        if self.window is not None:
+            self.window.toggle_fullscreen()
+        return True
+
+    def close_window(self):
+        if self.window is not None:
+            self.window.destroy()
+        return True
 
     def _root(self):
         root = tk.Tk()
@@ -91,21 +120,6 @@ class WindowsBridge:
                 return ""
         finally:
             root.destroy()
-
-    def minimize_window(self):
-        return True
-
-    def maximize_window(self):
-        return True
-
-    def restore_window(self):
-        return True
-
-    def toggle_fullscreen(self):
-        return True
-
-    def close_window(self):
-        return True
 
 
 def resource_root() -> Path:
@@ -210,6 +224,7 @@ def launch_native_window(url):
         focus=True,
         js_api=bridge,
     )
+    bridge.bind_window(window)
 
     # Intentionally no before_show/shown/loaded focus hooks here.
     webview.start(gui="edgechromium", debug=False)
