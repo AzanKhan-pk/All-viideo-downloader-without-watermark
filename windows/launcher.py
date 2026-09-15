@@ -171,7 +171,7 @@ def launch_native_window(url):
     # engine. It never searches for, launches, or depends on Google Chrome.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     webview.settings["ALLOW_FILE_URLS"] = True
-    webview.create_window(
+    window = webview.create_window(
         APP_NAME,
         url,
         width=1200,
@@ -179,7 +179,22 @@ def launch_native_window(url):
         min_size=(980, 700),
         resizable=True,
         confirm_close=False,
+        focus=True,
     )
+
+    # Explicitly focus the native WebView2 control after the window is shown.
+    # This fixes Windows builds where scrolling works but mouse clicks are not
+    # delivered to the web content after the native window is created.
+    def focus_webview(*_args):
+        try:
+            native_webview = getattr(window.native, "webview", None)
+            if native_webview is not None and hasattr(native_webview, "Focus"):
+                native_webview.Focus()
+        except Exception:
+            pass
+
+    window.events.shown += focus_webview
+    window.events.restore += focus_webview
     webview.start(gui="edgechromium", debug=False)
 
 
