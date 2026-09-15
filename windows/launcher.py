@@ -183,6 +183,7 @@ def launch_native_window(url):
     )
 
     def focus_webview(*_args):
+        """Force real Win32 foreground/focus onto the WebView2 child control."""
         try:
             native = getattr(window, "native", None)
             form = getattr(native, "form", None)
@@ -193,11 +194,25 @@ def launch_native_window(url):
             if native_webview is not None:
                 native_webview.BringToFront()
                 native_webview.Focus()
+
+            # WinForms Focus() can report success while the WebView2 child
+            # HWND still does not own the real Windows input focus. Use the
+            # Win32 focus APIs as a final native-level correction.
+            if sys.platform == "win32":
+                import ctypes
+                user32 = ctypes.windll.user32
+                form_handle = getattr(form, "Handle", None) if form is not None else None
+                webview_handle = getattr(native_webview, "Handle", None) if native_webview is not None else None
+                form_hwnd = int(form_handle.ToInt64()) if form_handle is not None else 0
+                webview_hwnd = int(webview_handle.ToInt64()) if webview_handle is not None else 0
+                if form_hwnd:
+                    user32.SetForegroundWindow(form_hwnd)
+                    user32.SetActiveWindow(form_hwnd)
+                if webview_hwnd:
+                    user32.SetFocus(webview_hwnd)
         except Exception:
             pass
 
-    # WebView2 must receive the native WinForms focus, not only the Python
-    # Window focus. This is the important part for Windows mouse input.
     window.events.shown += focus_webview
     window.events.loaded += focus_webview
     webview.start(gui="edgechromium", debug=False)
