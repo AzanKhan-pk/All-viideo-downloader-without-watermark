@@ -13,7 +13,6 @@ import history_features  # persists completed downloads across app restarts
 import ui_patches  # injects persistent controls while preserving the original progress UI
 import final_media_reliability_patch  # existing reliability layer
 import final_media_reliability_v2  # final v2 fixes for audio, images and real final size
-import final_ui_reliability_v2  # final completed-card folder placement
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
