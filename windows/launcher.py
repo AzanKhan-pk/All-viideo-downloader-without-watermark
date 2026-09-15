@@ -167,8 +167,9 @@ def check_for_update():
 
 
 def launch_native_window(url):
-    # The Windows GUI is rendered inside pywebview using the Edge WebView2
-    # engine. It never searches for, launches, or depends on Google Chrome.
+    # Native WinForms + Edge WebView2. Keep the normal window chrome and
+    # explicitly disable drag/drop window behaviour so WebView2 owns normal
+    # mouse hit-testing for every control.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     webview.settings["ALLOW_FILE_URLS"] = True
     window = webview.create_window(
@@ -178,26 +179,70 @@ def launch_native_window(url):
         height=820,
         min_size=(980, 700),
         resizable=True,
+        frameless=False,
+        easy_drag=False,
+        draggable=False,
+        text_select=True,
         confirm_close=False,
         focus=True,
     )
 
     def focus_webview(*_args):
-        """Force real Win32 foreground/focus onto the WebView2 child control."""
+        """Force the actual WinForms/WebView2 control to receive input focus."""
         try:
             native = getattr(window, "native", None)
             form = getattr(native, "form", None)
             native_webview = getattr(native, "webview", None)
+
             if form is not None:
                 form.Activate()
                 form.BringToFront()
-            if native_webview is not None:
-                native_webview.BringToFront()
-                native_webview.Focus()
 
-            # WinForms Focus() can report success while the WebView2 child
-            # HWND still does not own the real Windows input focus. Use the
-            # Win32 focus APIs as a final native-level correction.
+            if native_webview is not None:
+                try:
+                    native_webview.TabStop = True
+                except Exception:
+                    pass
+                try:
+                    native_webview.BringToFront()
+                except Exception:
+                    pass
+                try:
+                    native_webview.Select()
+                except Exception:
+                    pass
+                try:
+                    native_webview.Focus()
+                except Exception:
+                    pass
+
+                # WebView2 exposes a controller that can explicitly move focus
+                # into the browser. Programmatic is reason 0 in WebView2.
+                controller = getattr(native_webview, "CoreWebView2Controller", None)
+                if controller is not None:
+                    try:
+                        controller.IsVisible = True
+                    except Exception:
+                        pass
+                    try:
+                        # This application does not use OS drag/drop. Disabling
+                        # external drop avoids the known WebView2 input-lock
+                        # path where mouse clicks can stop being delivered.
+                        controller.AllowExternalDrop = False
+                    except Exception:
+                        pass
+                    try:
+                        controller.MoveFocus(0)
+                    except Exception:
+                        pass
+
+            if form is not None and native_webview is not None:
+                try:
+                    form.ActiveControl = native_webview
+                except Exception:
+                    pass
+
+            # Final Win32-level correction for the child HWND.
             if sys.platform == "win32":
                 import ctypes
                 user32 = ctypes.windll.user32
@@ -213,6 +258,9 @@ def launch_native_window(url):
         except Exception:
             pass
 
+    # before_show is the earliest point at which pywebview guarantees that
+    # window.native exists; loaded/shown are retained as post-load safeguards.
+    window.events.before_show += focus_webview
     window.events.shown += focus_webview
     window.events.loaded += focus_webview
     webview.start(gui="edgechromium", debug=False)
