@@ -26,35 +26,6 @@ class WindowsBridge:
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
         self.download_dir.mkdir(parents=True, exist_ok=True)
-        self.window = None
-
-    def bind_window(self, window):
-        self.window = window
-
-    def minimize_window(self):
-        if self.window is not None:
-            self.window.minimize()
-        return True
-
-    def maximize_window(self):
-        if self.window is not None:
-            self.window.maximize()
-        return True
-
-    def restore_window(self):
-        if self.window is not None:
-            self.window.restore()
-        return True
-
-    def toggle_fullscreen(self):
-        if self.window is not None:
-            self.window.toggle_fullscreen()
-        return True
-
-    def close_window(self):
-        if self.window is not None:
-            self.window.destroy()
-        return True
 
     def _root(self):
         root = tk.Tk()
@@ -120,6 +91,21 @@ class WindowsBridge:
                 return ""
         finally:
             root.destroy()
+
+    def minimize_window(self):
+        return True
+
+    def maximize_window(self):
+        return True
+
+    def restore_window(self):
+        return True
+
+    def toggle_fullscreen(self):
+        return True
+
+    def close_window(self):
+        return True
 
 
 def resource_root() -> Path:
@@ -196,11 +182,18 @@ def check_for_update():
 
 
 def launch_native_window(url):
-    # Native WinForms + Edge WebView2. Keep the normal window chrome and
-    # explicitly disable drag/drop window behaviour so WebView2 owns normal
-    # mouse hit-testing for every control.
+    # Keep pywebview's standard WinForms + Edge WebView2 input path.
+    # Do not call Focus/SetFocus/MoveFocus from lifecycle callbacks: those
+    # callbacks can run while WebView2 is initializing and can steal or lock
+    # browser input. The native WebView control should own mouse + keyboard
+    # hit-testing normally.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     webview.settings["ALLOW_FILE_URLS"] = True
+    try:
+        webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
+    except Exception:
+        pass
+
     bridge = WindowsBridge(Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME)
     window = webview.create_window(
         APP_NAME,
@@ -217,84 +210,8 @@ def launch_native_window(url):
         focus=True,
         js_api=bridge,
     )
-    bridge.bind_window(window)
 
-    def focus_webview(*_args):
-        """Force the actual WinForms/WebView2 control to receive input focus."""
-        try:
-            native = getattr(window, "native", None)
-            form = getattr(native, "form", None)
-            native_webview = getattr(native, "webview", None)
-
-            if form is not None:
-                form.Activate()
-                form.BringToFront()
-
-            if native_webview is not None:
-                try:
-                    native_webview.TabStop = True
-                except Exception:
-                    pass
-                try:
-                    native_webview.BringToFront()
-                except Exception:
-                    pass
-                try:
-                    native_webview.Select()
-                except Exception:
-                    pass
-                try:
-                    native_webview.Focus()
-                except Exception:
-                    pass
-
-                # WebView2 exposes a controller that can explicitly move focus
-                # into the browser. Programmatic is reason 0 in WebView2.
-                controller = getattr(native_webview, "CoreWebView2Controller", None)
-                if controller is not None:
-                    try:
-                        controller.IsVisible = True
-                    except Exception:
-                        pass
-                    try:
-                        # This application does not use OS drag/drop. Disabling
-                        # external drop avoids the known WebView2 input-lock
-                        # path where mouse clicks can stop being delivered.
-                        controller.AllowExternalDrop = False
-                    except Exception:
-                        pass
-                    try:
-                        controller.MoveFocus(0)
-                    except Exception:
-                        pass
-
-            if form is not None and native_webview is not None:
-                try:
-                    form.ActiveControl = native_webview
-                except Exception:
-                    pass
-
-            # Final Win32-level correction for the child HWND.
-            if sys.platform == "win32":
-                import ctypes
-                user32 = ctypes.windll.user32
-                form_handle = getattr(form, "Handle", None) if form is not None else None
-                webview_handle = getattr(native_webview, "Handle", None) if native_webview is not None else None
-                form_hwnd = int(form_handle.ToInt64()) if form_handle is not None else 0
-                webview_hwnd = int(webview_handle.ToInt64()) if webview_handle is not None else 0
-                if form_hwnd:
-                    user32.SetForegroundWindow(form_hwnd)
-                    user32.SetActiveWindow(form_hwnd)
-                if webview_hwnd:
-                    user32.SetFocus(webview_hwnd)
-        except Exception:
-            pass
-
-    # before_show is the earliest point at which pywebview guarantees that
-    # window.native exists; loaded/shown are retained as post-load safeguards.
-    window.events.before_show += focus_webview
-    window.events.shown += focus_webview
-    window.events.loaded += focus_webview
+    # Intentionally no before_show/shown/loaded focus hooks here.
     webview.start(gui="edgechromium", debug=False)
 
 
