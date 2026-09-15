@@ -11,7 +11,8 @@ import conversion_audio_patch  # live FFmpeg conversion progress and Pinterest a
 import location_features  # registers native download-location routes
 import history_features  # persists completed downloads across app restarts
 import ui_patches  # injects persistent controls while preserving the original progress UI
-import final_media_reliability_patch  # final focused Pinterest audio + social image reliability fixes
+import final_media_reliability_patch  # existing reliability layer
+import final_media_reliability_v2  # final v2 fixes for audio, images, size and folder UI
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
