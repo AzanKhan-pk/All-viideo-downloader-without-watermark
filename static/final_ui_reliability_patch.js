@@ -11,9 +11,6 @@
     || host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com')
     || host === 'reddit.com' || host.endsWith('.reddit.com');
 
-  // The original focused page handles TikTok/Pinterest. This adds the same
-  // public image/video flow for Facebook/Instagram/X/Reddit without changing
-  // the normal downloader.
   function installExtraSocialFetch() {
     const button = document.getElementById('fetch');
     const input = document.getElementById('url');
@@ -97,28 +94,19 @@
     }, true);
   }
 
+  // Static CSS only: no MutationObserver/setInterval. This prevents the UI
+  // freeze caused by repeatedly modifying the DOM while observing that same DOM.
   function patchFolder() {
     const style = document.createElement('style');
-    style.textContent = `.avd-history-actions{width:100%!important;display:flex!important;justify-content:flex-end!important;align-items:center!important;margin-left:auto!important}.avd-history-actions .avd-open-folder{margin-left:auto!important;min-width:auto!important;padding:0 12px!important;white-space:nowrap!important}`;
+    style.textContent = `
+      [data-field="complete"]{display:flex!important;align-items:center!important;width:100%!important;gap:10px!important}
+      .avd-history-actions{width:100%!important;display:flex!important;justify-content:flex-end!important;align-items:center!important;margin-left:auto!important;gap:8px!important}
+      .avd-history-actions .avd-open-folder{margin-left:auto!important;min-width:auto!important;padding:7px 12px!important;white-space:nowrap!important;font-size:0!important}
+      .avd-history-actions .avd-open-folder::after{content:'📂 Open in folder';font-size:14px!important}
+    `;
     document.head.appendChild(style);
   }
 
-  function patchSize() {
-    const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim();
-    const scan = () => document.querySelectorAll('.job:not(.avd-history-card)').forEach(card => {
-      const status = normalize(card.querySelector('[data-field="status"], .job-status')?.textContent).toLowerCase();
-      const stats = [...card.querySelectorAll('.job-stats .stat')];
-      const stat = stats.find(item => /^(file size|filesize)$/i.test(normalize(item.querySelector('.stat-label')?.textContent)));
-      const value = stat?.querySelector('.stat-value');
-      if (!value) return;
-      if (status !== 'completed' && !status.includes('completed')) value.textContent = 'Calculating…';
-    });
-    scan();
-    const jobs = document.getElementById('jobs');
-    if (jobs && window.MutationObserver) new MutationObserver(scan).observe(jobs, {childList:true, subtree:true, characterData:true});
-    setInterval(scan, 700);
-  }
-
-  const boot = () => { installExtraSocialFetch(); patchFolder(); patchSize(); };
+  const boot = () => { installExtraSocialFetch(); patchFolder(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
 })();
