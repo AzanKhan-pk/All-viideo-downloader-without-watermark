@@ -182,18 +182,24 @@ def launch_native_window(url):
         focus=True,
     )
 
-    # Explicitly focus the native WebView2 control after the window is shown.
-    # This fixes Windows builds where scrolling works but mouse clicks are not
-    # delivered to the web content after the native window is created.
     def focus_webview(*_args):
         try:
-            native_webview = getattr(window.native, "webview", None)
-            if native_webview is not None and hasattr(native_webview, "Focus"):
+            native = getattr(window, "native", None)
+            form = getattr(native, "form", None)
+            native_webview = getattr(native, "webview", None)
+            if form is not None:
+                form.Activate()
+                form.BringToFront()
+            if native_webview is not None:
+                native_webview.BringToFront()
                 native_webview.Focus()
         except Exception:
             pass
 
+    # WebView2 must receive the native WinForms focus, not only the Python
+    # Window focus. This is the important part for Windows mouse input.
     window.events.shown += focus_webview
+    window.events.loaded += focus_webview
     webview.start(gui="edgechromium", debug=False)
 
 
