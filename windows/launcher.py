@@ -194,7 +194,6 @@ def launch_native_window(url):
             pass
 
     window.events.shown += focus_webview
-    window.events.restore += focus_webview
     webview.start(gui="edgechromium", debug=False)
 
 
