@@ -26,6 +26,35 @@ class WindowsBridge:
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.window = None
+
+    def bind_window(self, window):
+        self.window = window
+
+    def minimize_window(self):
+        if self.window is not None:
+            self.window.minimize()
+        return True
+
+    def maximize_window(self):
+        if self.window is not None:
+            self.window.maximize()
+        return True
+
+    def restore_window(self):
+        if self.window is not None:
+            self.window.restore()
+        return True
+
+    def toggle_fullscreen(self):
+        if self.window is not None:
+            self.window.toggle_fullscreen()
+        return True
+
+    def close_window(self):
+        if self.window is not None:
+            self.window.destroy()
+        return True
 
     def _root(self):
         root = tk.Tk()
@@ -172,6 +201,7 @@ def launch_native_window(url):
     # mouse hit-testing for every control.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     webview.settings["ALLOW_FILE_URLS"] = True
+    bridge = WindowsBridge(Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME)
     window = webview.create_window(
         APP_NAME,
         url,
@@ -185,7 +215,9 @@ def launch_native_window(url):
         text_select=True,
         confirm_close=False,
         focus=True,
+        js_api=bridge,
     )
+    bridge.bind_window(window)
 
     def focus_webview(*_args):
         """Force the actual WinForms/WebView2 control to receive input focus."""
