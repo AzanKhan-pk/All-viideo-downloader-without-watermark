@@ -1,12 +1,11 @@
 import os
 
-# Legacy GPUs can leave WebView2 with a black client area when Chromium tries
-# to use the hardware ANGLE/D3D path. Force Chromium's current software
-# renderer instead. SwiftShader runs on the CPU, so the app does not depend
-# on the old NVIDIA/Direct3D driver for WebView rendering.
+# Keep WebView2 on the software ANGLE path for legacy GPUs, but do NOT disable
+# Chromium's compositor. The compositor itself is part of WebView2's normal
+# WinForms input/presentation path, and disabling it can create a different
+# host presentation path than the one pywebview expects.
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     "--use-gl=angle "
     "--use-angle=swiftshader "
-    "--disable-gpu-compositing "
     "--disable-features=CalculateNativeWinOcclusion"
 )
