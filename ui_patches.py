@@ -9,6 +9,7 @@ def inject_persistent_download_ui(response):
             markers = (
                 '<script src="/static/persistent_download_ui.js"></script>',
                 '<script src="/static/special_preview_ui.js"></script>',
+                '<script src="/static/mouse_input_final_patch.js"></script>',
                 '<script src="/static/text_selection_patch.js"></script>',
                 '<script src="/static/progress_size_stability_patch.js"></script>',
                 '<script src="/static/folder_action_position_patch.js"></script>',
