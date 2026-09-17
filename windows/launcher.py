@@ -15,260 +15,139 @@ from tkinter import filedialog, messagebox
 import webview
 
 APP_NAME = "All Video Downloader Without Watermark"
-APP_VERSION = "1.0.63"
+APP_VERSION = "1.0.64"
 PORT = None
 RELEASE_API = "https://api.github.com/repos/AzanKhan-pk/All-viideo-downloader-without-watermark/releases/latest"
 
 
 class WindowsBridge:
-    """Windows-only helpers retained for the existing Flask UI integration."""
     def __init__(self, data_root):
         self.data_root = Path(data_root)
         self.download_dir = Path.home() / "Downloads" / "Video downloader"
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.window = None
 
-    def bind_window(self, window):
-        self.window = window
-
-    def minimize_window(self):
-        if self.window is not None:
-            self.window.minimize()
-        return True
-
-    def maximize_window(self):
-        if self.window is not None:
-            self.window.maximize()
-        return True
-
-    def restore_window(self):
-        if self.window is not None:
-            self.window.restore()
-        return True
-
-    def toggle_fullscreen(self):
-        if self.window is not None:
-            self.window.toggle_fullscreen()
-        return True
-
-    def close_window(self):
-        if self.window is not None:
-            self.window.destroy()
-        return True
+    def bind_window(self, window): self.window = window
+    def minimize_window(self): self.window.minimize() if self.window else None; return True
+    def maximize_window(self): self.window.maximize() if self.window else None; return True
+    def restore_window(self): self.window.restore() if self.window else None; return True
+    def toggle_fullscreen(self): self.window.toggle_fullscreen() if self.window else None; return True
+    def close_window(self): self.window.destroy() if self.window else None; return True
 
     def _root(self):
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        return root
+        root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True); return root
 
     def browse_folder(self):
         root = self._root()
         try:
             selected = filedialog.askdirectory(parent=root, title="Choose Video Download Folder", initialdir=str(self.download_dir if self.download_dir.exists() else Path.home()))
-            if selected:
-                return self.set_download_folder(selected)
-            return str(self.download_dir)
-        finally:
-            root.destroy()
+            return self.set_download_folder(selected) if selected else str(self.download_dir)
+        finally: root.destroy()
 
     def set_download_folder(self, folder):
         try:
-            path = Path(str(folder)).expanduser().resolve()
-            path.mkdir(parents=True, exist_ok=True)
+            path = Path(str(folder)).expanduser().resolve(); path.mkdir(parents=True, exist_ok=True)
             self.download_dir = path
             import app as downloader_app
             downloader_app.DOWNLOAD_DIR = path
             return str(path)
-        except Exception as exc:
-            return {"error": str(exc)}
+        except Exception as exc: return {"error": str(exc)}
 
     def get_download_folder(self):
         try:
             import app as downloader_app
             return str(downloader_app.DOWNLOAD_DIR)
-        except Exception:
-            return str(self.download_dir)
+        except Exception: return str(self.download_dir)
 
     def open_download_folder(self):
-        folder = Path(self.get_download_folder())
-        folder.mkdir(parents=True, exist_ok=True)
-        if sys.platform == "win32":
-            os.startfile(str(folder))
+        folder = Path(self.get_download_folder()); folder.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32": os.startfile(str(folder))
         return str(folder)
 
     def open_download_file(self, filename):
         try:
             name = Path(str(filename or "")).name
-            folder = Path(self.get_download_folder()).resolve()
-            target = (folder / name).resolve()
+            folder = Path(self.get_download_folder()).resolve(); target = (folder / name).resolve()
             if target.exists() and target.parent == folder:
-                if sys.platform == "win32":
-                    subprocess.Popen(["explorer", "/select," + str(target)], close_fds=True)
+                if sys.platform == "win32": subprocess.Popen(["explorer", "/select," + str(target)], close_fds=True)
                 return str(target)
-            self.open_download_folder()
-            return str(folder)
-        except Exception as exc:
-            return {"error": str(exc)}
+            return self.open_download_folder()
+        except Exception as exc: return {"error": str(exc)}
 
     def read_clipboard(self):
         root = self._root()
         try:
-            try:
-                return str(root.clipboard_get() or "")
-            except tk.TclError:
-                return ""
-        finally:
-            root.destroy()
+            try: return str(root.clipboard_get() or "")
+            except tk.TclError: return ""
+        finally: root.destroy()
 
 
-def resource_root() -> Path:
-    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+def resource_root(): return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
-
-def prepare_runtime() -> Path:
-    root = resource_root()
-    data_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
-    data_root.mkdir(parents=True, exist_ok=True)
-    for relative in ["app.py", "templates", "static"]:
-        source = root / relative
-        target = data_root / relative
-        if source.is_dir():
-            shutil.copytree(source, target, dirs_exist_ok=True)
-        elif source.is_file():
-            shutil.copy2(source, target)
+def prepare_runtime():
+    root = resource_root(); data_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME; data_root.mkdir(parents=True, exist_ok=True)
+    for relative in ["app.py", "templates", "static", "core_app.py", "media_features.py", "media_quality_patch.py", "history_features.py", "location_features.py", "runtime_patches.py", "media_url_compat.py", "ui_patches.py", "site_fallbacks.py"]:
+        source = root / relative; target = data_root / relative
+        if source.is_dir(): shutil.copytree(source, target, dirs_exist_ok=True)
+        elif source.is_file(): shutil.copy2(source, target)
     bundled_tools = root / "tools"
-    if bundled_tools.exists():
-        os.environ["PATH"] = str(bundled_tools) + os.pathsep + os.environ.get("PATH", "")
+    if bundled_tools.exists(): os.environ["PATH"] = str(bundled_tools) + os.pathsep + os.environ.get("PATH", "")
     return data_root
-
 
 def find_free_port(start=5000, attempts=100):
     for candidate in range(start, start + attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("127.0.0.1", candidate))
-                return candidate
-            except OSError:
-                continue
+            try: sock.bind(("127.0.0.1", candidate)); return candidate
+            except OSError: continue
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+        sock.bind(("127.0.0.1", 0)); return int(sock.getsockname()[1])
 
-
-def start_server(data_root: Path, port: int):
-    sys.path.insert(0, str(data_root))
-    import app as downloader_app
-    default_download_dir = Path.home() / "Downloads" / "Video downloader"
-    default_download_dir.mkdir(parents=True, exist_ok=True)
+def start_server(data_root, port):
+    sys.path.insert(0, str(data_root)); import app as downloader_app
+    default_download_dir = Path.home() / "Downloads" / "Video downloader"; default_download_dir.mkdir(parents=True, exist_ok=True)
     downloader_app.DOWNLOAD_DIR = default_download_dir
-    if hasattr(downloader_app, "resume_persisted_jobs"):
-        downloader_app.resume_persisted_jobs()
+    if hasattr(downloader_app, "resume_persisted_jobs"): downloader_app.resume_persisted_jobs()
     downloader_app.app.run(host="127.0.0.1", port=port, debug=False, threaded=True, use_reloader=False)
 
-
 def version_tuple(value):
-    try:
-        return tuple(int(x) for x in value.lstrip("v").split(".")[:3])
-    except Exception:
-        return (0, 0, 0)
-
+    try: return tuple(int(x) for x in value.lstrip("v").split(".")[:3])
+    except Exception: return (0, 0, 0)
 
 def check_for_update():
     try:
         req = urllib.request.Request(RELEASE_API, headers={"User-Agent": APP_NAME})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            release = json.load(response)
+        with urllib.request.urlopen(req, timeout=5) as response: release = json.load(response)
         latest = str(release.get("tag_name", ""))
-        if version_tuple(latest) <= version_tuple(APP_VERSION):
-            return
+        if version_tuple(latest) <= version_tuple(APP_VERSION): return
         asset = next((a for a in release.get("assets", []) if a.get("name", "").lower().endswith("setup.exe")), None)
-        if not asset or not messagebox.askyesno(APP_NAME, f"A new version ({latest}) is available.\n\nUpdate now?"):
-            return
-        target = Path(tempfile.gettempdir()) / "All-Video-Downloader-Update.exe"
-        urllib.request.urlretrieve(asset["browser_download_url"], target)
-        subprocess.Popen([str(target)], close_fds=True)
-        raise SystemExit(0)
-    except SystemExit:
-        raise
-    except Exception:
-        pass
-
+        if not asset or not messagebox.askyesno(APP_NAME, f"A new version ({latest}) is available.\n\nUpdate now?"): return
+        target = Path(tempfile.gettempdir()) / "All-Video-Downloader-Update.exe"; urllib.request.urlretrieve(asset["browser_download_url"], target); subprocess.Popen([str(target)], close_fds=True); raise SystemExit(0)
+    except SystemExit: raise
+    except Exception: pass
 
 def launch_native_window(url):
-    # Keep pywebview's standard WinForms + Edge WebView2 input path.
-    # Do not call Focus/SetFocus/MoveFocus from lifecycle callbacks: those
-    # callbacks can run while WebView2 is initializing and can steal or lock
-    # browser input. The native WebView control should own mouse + keyboard
-    # hit-testing normally.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
     webview.settings["ALLOW_FILE_URLS"] = True
-    try:
-        webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
-    except Exception:
-        pass
-
-    bridge = WindowsBridge(Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME)
-    window = webview.create_window(
-        APP_NAME,
-        url,
-        width=1200,
-        height=820,
-        min_size=(980, 700),
-        resizable=True,
-        frameless=False,
-        easy_drag=False,
-        draggable=False,
-        text_select=True,
-        confirm_close=False,
-        focus=True,
-        js_api=bridge,
-    )
-    bridge.bind_window(window)
-
-    # Intentionally no before_show/shown/loaded focus hooks here.
+    # Do not use lifecycle focus callbacks: they can steal pointer/keyboard input.
+    window = webview.create_window(APP_NAME, url, width=1200, height=820, min_size=(980, 700), resizable=True, frameless=False, easy_drag=False, draggable=False, text_select=True, confirm_close=False, focus=True)
     webview.start(gui="edgechromium", debug=False)
-
 
 def main():
     global PORT
-    check_for_update()
-    data_root = prepare_runtime()
-    PORT = find_free_port()
-    server_error = []
-
+    check_for_update(); data_root = prepare_runtime(); PORT = find_free_port(); server_error = []
     def run_server():
-        try:
-            start_server(data_root, PORT)
-        except Exception as exc:
-            server_error.append(exc)
-
-    server = threading.Thread(target=run_server, daemon=True)
-    server.start()
-
-    ready = False
-    deadline = time.time() + 30
+        try: start_server(data_root, PORT)
+        except Exception as exc: server_error.append(exc)
+    threading.Thread(target=run_server, daemon=True).start(); ready = False; deadline = time.time() + 30
     while time.time() < deadline:
-        if server_error:
-            break
+        if server_error: break
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/", timeout=1) as response:
-                if 200 <= response.status < 500:
-                    ready = True
-                    break
-        except Exception:
-            time.sleep(0.25)
-
+                if 200 <= response.status < 500: ready = True; break
+        except Exception: time.sleep(0.25)
     if not ready:
-        detail = str(server_error[0]) if server_error else "The local app server did not start."
-        messagebox.showerror(APP_NAME, "The app could not start its local service.\n\nDetails: " + detail)
-        return
+        detail = str(server_error[0]) if server_error else "The local app server did not start."; messagebox.showerror(APP_NAME, "The app could not start its local service.\n\nDetails: " + detail); return
+    try: launch_native_window(f"http://127.0.0.1:{PORT}")
+    except Exception as exc: messagebox.showerror(APP_NAME, "The app window could not start.\n\nDetails: " + str(exc))
 
-    try:
-        launch_native_window(f"http://127.0.0.1:{PORT}")
-    except Exception as exc:
-        messagebox.showerror(APP_NAME, "The app window could not start.\n\nDetails: " + str(exc))
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
