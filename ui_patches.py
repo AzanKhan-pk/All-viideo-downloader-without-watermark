@@ -16,7 +16,8 @@ def inject_persistent_download_ui(response):
                 '<script src="/static/final_ui_reliability_patch.js"></script>',
                 '<script src="/static/windows_keyboard_shortcuts.js"></script>',
                 '<script src="/static/app_keyboard_shortcuts.js"></script>',
-                '<script src="/static/keyboard_shortcuts_button.js"></script>'
+                '<script src="/static/keyboard_shortcuts_button.js"></script>',
+                '<script src="/static/mouse_click_final_fix.js"></script>',
             )
             if "</body>" in body:
                 for marker in markers:
